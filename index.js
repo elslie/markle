@@ -17,7 +17,7 @@ dotenv.config();
 
 import { Client, GatewayIntentBits, Partials } from 'discord.js';
 
-const bannedWords = ['yao', 'fag', 'retard', 'cunt', 'bashno']; // Add your banned words here (lowercase)
+const bannedWords = ['yao', 'fag', 'retard', 'cunt', 'bashno'];
 const allowedUserIds = new Set(
   process.env.ALLOWED_USERS?.split(',').map(id => id.trim()) || []
 );
@@ -76,13 +76,13 @@ setInterval(async () => {
   }
 }, 100);
 
-// 👇 Add your test server channel ID here
-const TEST_CHANNEL_ID = '1382577291015749674'; // <--- Replace this!
+// 👇 Add your test server text channel ID here
+const TEST_CHANNEL_ID = '1382577291015749674'; // ← Replace with your test channel ID
 
 client.on('ready', () => {
   console.log(`Logged in as ${client.user.tag}!`);
 
-  // 👇 Every minute, send a harmless message to keep bot alive
+  // 👇 Every minute, send a message to keep bot alive
   setInterval(async () => {
     try {
       const ch = await client.channels.fetch(TEST_CHANNEL_ID).catch(() => null);
@@ -94,11 +94,10 @@ client.on('ready', () => {
     } catch (e) {
       console.error('Keep-alive failed:', e.message);
     }
-  }, 60 * 1000); // Every 1 minute
+  }, 60 * 1000);
 });
 
 client.on('messageCreate', async (message) => {
-
   if (message.author.bot || !message.guild) return;
 
   const userId = message.author.id;
@@ -111,8 +110,12 @@ client.on('messageCreate', async (message) => {
       mutedUsers.set(userId, Date.now());
       setTimeout(() => mutedUsers.delete(userId), MUTE_DURATION);
 
+      await message.channel.send({
+        content: `${username} nuh uh no no word`,
+        allowedMentions: { users: [userId] }
+      });
+
       deleteQueue.push(() => message.delete());
-      await message.channel.send(`${username} nuh uh no no word`);
     }
     return;
   }
@@ -122,9 +125,7 @@ client.on('messageCreate', async (message) => {
   const current = activeChallenges.get(userId);
   const timer = freeSpeechTimers.get(userId);
 
-  if (timer) {
-    return;
-  }
+  if (timer) return;
 
   if (current?.state === 'solved') {
     // 20% chance of temporary free speech
