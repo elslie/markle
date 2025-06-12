@@ -76,6 +76,27 @@ setInterval(async () => {
   }
 }, 100);
 
+// 👇 Add your test server channel ID here
+const TEST_CHANNEL_ID = '1382577291015749674'; // <--- Replace this!
+
+client.on('ready', () => {
+  console.log(`Logged in as ${client.user.tag}!`);
+
+  // 👇 Every minute, send a harmless message to keep bot alive
+  setInterval(async () => {
+    try {
+      const ch = await client.channels.fetch(TEST_CHANNEL_ID).catch(() => null);
+      if (!ch || !ch.isTextBased()) return;
+
+      ch.send('✅ Still alive')
+        .then(msg => setTimeout(() => msg.delete().catch(() => {}), 5000))
+        .catch(() => {});
+    } catch (e) {
+      console.error('Keep-alive failed:', e.message);
+    }
+  }, 60 * 1000); // Every 1 minute
+});
+
 client.on('messageCreate', async (message) => {
 
   if (message.author.bot || !message.guild) return;
