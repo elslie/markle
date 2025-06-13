@@ -15,9 +15,28 @@ app.listen(PORT, () => {
 import dotenv from 'dotenv';
 dotenv.config();
 
-import { Client, GatewayIntentBits, Partials, REST, Routes, SlashCommandBuilder } from 'discord.js';
+import { 
+  Client, 
+  GatewayIntentBits, 
+  Partials, 
+  Collection, 
+  REST, 
+  Routes, 
+  SlashCommandBuilder,
+  InteractionResponseFlags
+} from 'discord.js';
 
 const bannedWords = ['yao', 'fag', 'retard', 'cunt', 'bashno'];
+
+// Load allowed blocked users from .env (comma separated IDs)
+const allowedUsers = new Set(
+  process.env.ALLOWED_USERS?.split(',').map(id => id.trim()) || []
+);
+
+// Load users authorized to use slash commands (comma separated IDs)
+const authorizedCommandUsers = new Set(
+  process.env.SLASH_COMMAND_USERS?.split(',').map(id => id.trim()) || []
+);
 
 const client = new Client({
   intents: [
@@ -29,20 +48,12 @@ const client = new Client({
   partials: [Partials.Channel]
 });
 
-// Load lists from .env
-const allowedUsers = new Set(
-  process.env.ALLOWED_USERS?.split(',').map(id => id.trim()) || []
-);
-
-const authorizedCommandUsers = new Set(
-  process.env.SLASH_COMMAND_USERS?.split(',').map(id => id.trim()) || []
-);
-
-// Track muted users: userId -> { expires: timestamp, challengeState, answer }
-const mutedUsers = new Map();
-
-const FREE_SPEECH_DURATION = 30 * 1000; // Optional free speech after solving
+const activeChallenges = new Map();
+const freeSpeechTimers = new Map();
 const deleteQueue = [];
+const muteTimeouts = new Map();
+
+const FREE_SPEECH_DURATION = 30 * 1000;
 
 function generateExclamations(count) {
   return '!'.repeat(count);
@@ -57,7 +68,7 @@ async function sendChallenge(channel, userId, intro = true) {
   }
   await channel.send(`<@${userId}> count${exclamations}`);
 
-  mutedUsers.set(userId, { state: 'waiting', answer: count, expires: mutedUsers.get(userId)?.expires || 0 });
+  activeChallenges.set(userId, { state: 'waiting', answer: count });
 }
 
 function containsBannedWord(content) {
@@ -76,21 +87,34 @@ setInterval(async () => {
   }
 }, 100);
 
-// Slash command registration
+const TEST_CHANNEL_ID = '1382577291015749674';
+
 client.once('ready', async () => {
   console.log(`Logged in as ${client.user.tag}!`);
 
+  setInterval(async () => {
+    try {
+      const ch = await client.channels.fetch(TEST_CHANNEL_ID).catch(() => null);
+      if (!ch || !ch.isTextBased()) return;
+      ch.send('✅ Still alive')
+        .then(msg => setTimeout(() => msg.delete().catch(() => {}), 5000))
+        .catch(() => {});
+    } catch (e) {
+      console.error('Keep-alive failed:', e.message);
+    }
+  }, 60 * 1000);
+
+  // Register slash commands with duration option for mute:
   const commands = [
     new SlashCommandBuilder()
       .setName('mute')
-      .setDescription('Mute a user with a counting challenge')
-      .addUserOption(opt => opt.setName('user').setDescription('User to mute').setRequired(true))
-      .addIntegerOption(opt => opt.setName('duration').setDescription('Duration in minutes').setRequired(false)),
-
+      .setDescription('Start a !!! challenge for a user for specified duration (seconds)')
+      .addUserOption(opt => opt.setName('user').setDescription('User to challenge').setRequired(true))
+      .addIntegerOption(opt => opt.setName('duration').setDescription('Mute duration in seconds').setRequired(false)),
     new SlashCommandBuilder()
       .setName('unmute')
-      .setDescription('Unmute a user')
-      .addUserOption(opt => opt.setName('user').setDescription('User to unmute').setRequired(true))
+      .setDescription('Cancel a challenge')
+      .addUserOption(opt => opt.setName('user').setDescription('User to release').setRequired(true))
   ].map(cmd => cmd.toJSON());
 
   const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
@@ -103,91 +127,114 @@ client.once('ready', async () => {
   }
 });
 
-// Interaction handler for slash commands
-client.on('interactionCreate', async (interaction) => {
+client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;
 
+  // Check if user can run commands
   if (!authorizedCommandUsers.has(interaction.user.id)) {
-    return interaction.reply({ content: 'You are not authorized to use this command.', ephemeral: true });
+    return interaction.reply({ content: 'You are not allowed to use this command.', flags: InteractionResponseFlags.Ephemeral });
   }
 
-  const targetUser = interaction.options.getUser('user');
-  if (!targetUser) {
-    return interaction.reply({ content: 'Please specify a valid user.', ephemeral: true });
-  }
+  const user = interaction.options.getUser('user');
 
   if (interaction.commandName === 'mute') {
-    const durationMinutes = interaction.options.getInteger('duration') || 10;
-    const expires = Date.now() + durationMinutes * 60 * 1000;
+    const duration = interaction.options.getInteger('duration') || 30;
+    const channel = interaction.channel;
 
-    mutedUsers.set(targetUser.id, { state: 'pending', expires });
+    await sendChallenge(channel, user.id);
 
-    await sendChallenge(interaction.channel, targetUser.id);
+    // Clear existing mute timeout if any:
+    if (muteTimeouts.has(user.id)) {
+      clearTimeout(muteTimeouts.get(user.id));
+    }
 
-    return interaction.reply({ content: `<@${targetUser.id}> has been muted for ${durationMinutes} minutes.`, ephemeral: true });
-  }
+    // Set timeout to auto unmute:
+    const timeout = setTimeout(() => {
+      activeChallenges.delete(user.id);
+      freeSpeechTimers.delete(user.id);
+      muteTimeouts.delete(user.id);
+      channel.send(`<@${user.id}> has been unmuted (mute duration ended).`);
+    }, duration * 1000);
 
-  if (interaction.commandName === 'unmute') {
-    mutedUsers.delete(targetUser.id);
-    return interaction.reply({ content: `<@${targetUser.id}> has been unmuted.`, ephemeral: true });
+    muteTimeouts.set(user.id, timeout);
+
+    interaction.reply({ content: `Challenge started for <@${user.id}>. Duration: ${duration} seconds.`, flags: InteractionResponseFlags.Ephemeral });
+
+  } else if (interaction.commandName === 'unmute') {
+    activeChallenges.delete(user.id);
+    freeSpeechTimers.delete(user.id);
+
+    if (muteTimeouts.has(user.id)) {
+      clearTimeout(muteTimeouts.get(user.id));
+      muteTimeouts.delete(user.id);
+    }
+
+    interaction.reply({ content: `Challenge cleared for <@${user.id}>.`, flags: InteractionResponseFlags.Ephemeral });
   }
 });
 
-// Message handler
 client.on('messageCreate', async (message) => {
   if (message.author.bot || !message.guild) return;
 
   const userId = message.author.id;
+  const username = `<@${userId}>`;
   const content = message.content.trim();
 
-  // Always delete messages from allowed users
+  // Always block users in allowedUsers list (delete messages)
   if (allowedUsers.has(userId)) {
     deleteQueue.push(() => message.delete());
     return;
   }
 
-  // Delete messages with banned words from anyone
+  // Also delete messages containing banned words for everyone else (but no challenge)
   if (containsBannedWord(content)) {
     deleteQueue.push(() => message.delete());
     return;
   }
 
-  // Check if user is muted and if mute is expired
-  const muteInfo = mutedUsers.get(userId);
-  if (muteInfo) {
-    if (Date.now() > muteInfo.expires) {
-      mutedUsers.delete(userId);
-      return; // mute expired, allow messages
-    }
+  const current = activeChallenges.get(userId);
+  const timer = freeSpeechTimers.get(userId);
 
-    if (muteInfo.state === 'waiting') {
-      const guess = parseInt(content);
-      if (guess === muteInfo.answer) {
-        await message.channel.send(`<@${userId}> good job, you passed the challenge!`);
-        mutedUsers.set(userId, { ...muteInfo, state: 'solved' });
-      } else {
-        await message.channel.send(`<@${userId}> incorrect, try again.`);
-        await sendChallenge(message.channel, userId, false);
-      }
-      deleteQueue.push(() => message.delete());
-      return;
-    }
+  if (timer) return;
 
-    if (muteInfo.state === 'solved') {
-      // Optionally, implement free speech time or just block all messages until mute expires
-      deleteQueue.push(() => message.delete());
-      return;
-    }
+  if (current?.state === 'solved') {
+    if (Math.random() < 0.2) {
+      freeSpeechTimers.set(userId, Date.now());
+      const interval = setInterval(() => {
+        const elapsed = Date.now() - freeSpeechTimers.get(userId);
+        const remaining = Math.ceil((FREE_SPEECH_DURATION - elapsed) / 1000);
 
-    // If state is 'pending', send challenge? (Shouldn't happen normally)
-    deleteQueue.push(() => message.delete());
+        if (remaining > 0) {
+          message.channel.send(`${remaining}`);
+        } else {
+          message.channel.send(`${username} no more free speech`);
+          freeSpeechTimers.delete(userId);
+          clearInterval(interval);
+        }
+      }, 5000);
+      await message.channel.send(`${username} congrats u now have temporary free speech`);
+    }
+    activeChallenges.delete(userId);
     return;
   }
 
-  // If user is not muted or allowed, allow messages normally
+  deleteQueue.push(() => message.delete());
+
+  if (current?.state === 'waiting') {
+    const guess = parseInt(content);
+    if (guess === current.answer) {
+      await message.channel.send(`${username} good boy`);
+      activeChallenges.set(userId, { state: 'solved' });
+    } else {
+      await message.channel.send(`${username} nuh uh, try again`);
+      await sendChallenge(message.channel, userId, false);
+    }
+    return;
+  }
+
+  // No blocking/challenge if user not in allowedUsers or activeChallenges
 });
 
 client.login(process.env.TOKEN);
 
 console.log('🤖 Bot is starting...');
-
