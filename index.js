@@ -18,9 +18,6 @@ dotenv.config();
 import { Client, GatewayIntentBits, Partials, Collection, REST, Routes, SlashCommandBuilder } from 'discord.js';
 
 const bannedWords = ['yao', 'fag', 'retard', 'cunt', 'bashno'];
-const allowedUserIds = new Set(
-  process.env.ALLOWED_USERS?.split(',').map(id => id.trim()) || []
-);
 
 const client = new Client({
   intents: [
@@ -86,7 +83,6 @@ client.once('ready', async () => {
     }
   }, 60 * 1000);
 
-  // Register slash commands
   const commands = [
     new SlashCommandBuilder()
       .setName('mute')
@@ -108,22 +104,27 @@ client.once('ready', async () => {
   }
 });
 
+const allowedSlashCommandUsers = new Set(
+  process.env.SLASH_COMMAND_USERS?.split(',').map(id => id.trim()) || []
+);
+
 client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;
 
-  const user = interaction.options.getUser('user');
-  if (!allowedUserIds.has(user.id)) {
-    await interaction.reply({ content: 'This user is not eligible.', flags: 64 });
-    return;
+  if (!allowedSlashCommandUsers.has(interaction.user.id)) {
+    return interaction.reply({ content: 'You are not allowed to use this command.', ephemeral: true });
   }
 
+  const user = interaction.options.getUser('user');
+
   if (interaction.commandName === 'mute') {
-    await sendChallenge(interaction.channel, user.id);
-    await interaction.reply({ content: `Challenge started for <@${user.id}>.`, flags: 64 });
+    const channel = interaction.channel;
+    await sendChallenge(channel, user.id);
+    interaction.reply({ content: `Challenge started for <@${user.id}>.`, ephemeral: true });
   } else if (interaction.commandName === 'unmute') {
     activeChallenges.delete(user.id);
     freeSpeechTimers.delete(user.id);
-    await interaction.reply({ content: `Challenge cleared for <@${user.id}>.`, flags: 64 });
+    interaction.reply({ content: `Challenge cleared for <@${user.id}>.`, ephemeral: true });
   }
 });
 
@@ -138,8 +139,6 @@ client.on('messageCreate', async (message) => {
     deleteQueue.push(() => message.delete());
     return;
   }
-
-  if (!allowedUserIds.has(userId)) return;
 
   const current = activeChallenges.get(userId);
   const timer = freeSpeechTimers.get(userId);
