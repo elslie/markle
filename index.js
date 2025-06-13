@@ -113,17 +113,17 @@ client.on('interactionCreate', async interaction => {
 
   const user = interaction.options.getUser('user');
   if (!allowedUserIds.has(user.id)) {
-    return interaction.reply({ content: 'This user is not eligible.', ephemeral: true });
+    await interaction.reply({ content: 'This user is not eligible.', flags: 64 });
+    return;
   }
 
   if (interaction.commandName === 'mute') {
-    const channel = interaction.channel;
-    await sendChallenge(channel, user.id);
-    interaction.reply({ content: `Challenge started for <@${user.id}>.`, ephemeral: true });
+    await sendChallenge(interaction.channel, user.id);
+    await interaction.reply({ content: `Challenge started for <@${user.id}>.`, flags: 64 });
   } else if (interaction.commandName === 'unmute') {
     activeChallenges.delete(user.id);
     freeSpeechTimers.delete(user.id);
-    interaction.reply({ content: `Challenge cleared for <@${user.id}>.`, ephemeral: true });
+    await interaction.reply({ content: `Challenge cleared for <@${user.id}>.`, flags: 64 });
   }
 });
 
