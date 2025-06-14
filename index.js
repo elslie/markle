@@ -31,6 +31,7 @@ const wordResponses = {
     'lelll😛': 'lelll😛',
     'ping': 'pong',
     'bot': 'is that a markle reference?????',
+    'marco': 'polo',
     // Add more word/phrase responses here
     // 'trigger word': 'response message',
 };
