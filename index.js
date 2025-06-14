@@ -25,6 +25,16 @@ const KEEP_ALIVE_INTERVAL = 60 * 1000;
 const COUNTDOWN_INTERVAL = 5000;
 const TEST_CHANNEL_ID = '1382577291015749674';
 
+// Word/phrase responses - add your custom responses here
+const wordResponses = {
+    'gn': 'gn!!!!!',
+    'lelll😛': 'lelll😛',
+    'ping': 'pong',
+    'bot': 'is that a markle reference?????',
+    // Add more word/phrase responses here
+    // 'trigger word': 'response message',
+};
+
 // User sets
 const allowedUsers = new Set(
     process.env.ALLOWED_USERS?.split(',').map(id => id.trim()).filter(Boolean) || []
@@ -61,6 +71,24 @@ function generateExclamations(count) {
 function containsBannedWord(content) {
     const lower = content.toLowerCase();
     return bannedWords.some(word => lower.includes(word));
+}
+
+function checkWordResponses(content) {
+    const lower = content.toLowerCase();
+    
+    // Check for exact matches first
+    if (wordResponses[lower]) {
+        return wordResponses[lower];
+    }
+    
+    // Check if any trigger word/phrase is contained in the message
+    for (const [trigger, response] of Object.entries(wordResponses)) {
+        if (lower.includes(trigger.toLowerCase())) {
+            return response;
+        }
+    }
+    
+    return null; // No matching response found
 }
 
 function safeDelete(message) {
@@ -355,11 +383,31 @@ client.on('messageCreate', async (message) => {
 
     // Handle allowed users - they can always speak freely (after banned word check)
     if (allowedUsers.has(userId)) {
+        // Check for word responses even for allowed users
+        const response = checkWordResponses(content);
+        if (response) {
+            try {
+                await message.channel.send(response);
+                console.log(`🤖 Bot responded to @${message.author.username} (${userId}) with: "${response}"`);
+            } catch (error) {
+                console.error('Failed to send word response:', error.message);
+            }
+        }
         return; // Don't interfere with allowed users
     }
 
     // Check if this user is currently muted
     if (!mutedUsers.has(userId)) {
+        // Check for word responses for non-muted users
+        const response = checkWordResponses(content);
+        if (response) {
+            try {
+                await message.channel.send(response);
+                console.log(`🤖 Bot responded to @${message.author.username} (${userId}) with: "${response}"`);
+            } catch (error) {
+                console.error('Failed to send word response:', error.message);
+            }
+        }
         return; // User is not muted, let them speak freely
     }
 
