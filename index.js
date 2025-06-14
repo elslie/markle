@@ -15,7 +15,7 @@ app.listen(PORT, () => {
 import dotenv from 'dotenv';
 dotenv.config();
 
-import { Client, GatewayIntentBits, Partials, Collection, REST, Routes, SlashCommandBuilder, EmbedBuilder } from 'discord.js';
+import { Client, GatewayIntentBits, Partials, Collection, REST, Routes, SlashCommandBuilder, EmbedBuilder, MessageFlags } from 'discord.js';
 
 // Configuration
 const bannedWords = ['yao', 'fag', 'retard', 'cunt', 'bashno'];
@@ -77,7 +77,11 @@ function safeDelete(message) {
     });
 }
 
-function clearUserState(userId) {
+async function clearUserState(userId) {
+    const hadChallenge = activeChallenges.has(userId);
+    const hadFreeSpeech = freeSpeechTimers.has(userId);
+    const wasMuted = mutedUsers.has(userId);
+    
     activeChallenges.delete(userId);
     freeSpeechTimers.delete(userId);
     mutedUsers.delete(userId); // Remove from muted users
@@ -90,6 +94,15 @@ function clearUserState(userId) {
     if (countdownIntervals.has(userId)) {
         clearInterval(countdownIntervals.get(userId));
         countdownIntervals.delete(userId);
+    }
+    
+    if (hadChallenge || hadFreeSpeech || wasMuted) {
+        try {
+            const user = await client.users.fetch(userId);
+            console.log(`🧹 Cleared state for @${user.username} (${userId}) - Challenge: ${hadChallenge}, FreeSpeech: ${hadFreeSpeech}, Muted: ${wasMuted}`);
+        } catch (error) {
+            console.log(`🧹 Cleared state for user ${userId} - Challenge: ${hadChallenge}, FreeSpeech: ${hadFreeSpeech}, Muted: ${wasMuted}`);
+        }
     }
 }
 
@@ -110,14 +123,29 @@ async function sendChallenge(channel, userId, intro = true) {
         });
         
         mutedUsers.add(userId); // Add user to muted set
+        
+        // Console logging with username
+        try {
+            const user = await client.users.fetch(userId);
+            console.log(`🎯 User @${user.username} (${userId}) got challenged, answer is ${count}`);
+        } catch (error) {
+            console.log(`🎯 User ${userId} got challenged, answer is ${count}`);
+        }
     } catch (error) {
         console.error('Failed to send challenge:', error.message);
     }
 }
 
-function startFreeSpeechCountdown(channel, userId) {
+async function startFreeSpeechCountdown(channel, userId) {
     const startTime = Date.now();
     freeSpeechTimers.set(userId, startTime);
+    
+    try {
+        const user = await client.users.fetch(userId);
+        console.log(`🗣️ User @${user.username} (${userId}) granted free speech for ${FREE_SPEECH_DURATION / 1000}s`);
+    } catch (error) {
+        console.log(`🗣️ User ${userId} granted free speech for ${FREE_SPEECH_DURATION / 1000}s`);
+    }
     
     const interval = setInterval(async () => {
         try {
@@ -130,6 +158,12 @@ function startFreeSpeechCountdown(channel, userId) {
                 setTimeout(() => safeDelete(msg), 3000);
             } else {
                 await channel.send(`<@${userId}> no more free speech`);
+                try {
+                    const user = await client.users.fetch(userId);
+                    console.log(`⏰ User @${user.username} (${userId}) free speech expired`);
+                } catch (error) {
+                    console.log(`⏰ User ${userId} free speech expired`);
+                }
                 freeSpeechTimers.delete(userId);
                 countdownIntervals.delete(userId);
                 clearInterval(interval);
@@ -224,7 +258,7 @@ client.on('interactionCreate', async interaction => {
     if (!allowedSlashCommandUsers.has(interaction.user.id)) {
         return interaction.reply({ 
             content: '❌ You are not authorized to use this command.', 
-            ephemeral: true 
+            flags: MessageFlags.Ephemeral 
         });
     }
 
@@ -250,7 +284,7 @@ client.on('interactionCreate', async interaction => {
 
             await interaction.reply({ 
                 content: `✅ Challenge started for <@${user.id}> (Duration: ${duration}s)`, 
-                ephemeral: true 
+                flags: MessageFlags.Ephemeral 
             });
 
         } else if (interaction.commandName === 'unmute') {
@@ -260,7 +294,7 @@ client.on('interactionCreate', async interaction => {
             
             await interaction.reply({ 
                 content: `✅ Challenge cleared for <@${user.id}>`, 
-                ephemeral: true 
+                flags: MessageFlags.Ephemeral 
             });
 
         } else if (interaction.commandName === 'status') {
@@ -275,7 +309,7 @@ client.on('interactionCreate', async interaction => {
                 )
                 .setTimestamp();
 
-            await interaction.reply({ embeds: [embed], ephemeral: true });
+            await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
         }
     } catch (error) {
         console.error('Interaction error:', error);
@@ -285,7 +319,7 @@ client.on('interactionCreate', async interaction => {
             : '❌ An error occurred while processing the command.';
             
         if (!interaction.replied && !interaction.deferred) {
-            await interaction.reply({ content: errorMsg, ephemeral: true });
+            await interaction.reply({ content: errorMsg, flags: MessageFlags.Ephemeral });
         }
     }
 });
@@ -300,6 +334,7 @@ client.on('messageCreate', async (message) => {
     // Handle banned words for all users (including allowed users)
     if (containsBannedWord(content)) {
         safeDelete(message);
+        console.log(`🚫 User @${message.author.username} (${userId}) used banned word: "${content}"`);
         try {
             await message.channel.send(`<@${userId}> nuh uh no no word`);
         } catch (error) {
@@ -328,8 +363,10 @@ client.on('messageCreate', async (message) => {
     if (challenge?.state === 'solved') {
         // 20% chance to grant free speech
         if (Math.random() < 0.2) {
-            startFreeSpeechCountdown(message.channel, userId);
+            await startFreeSpeechCountdown(message.channel, userId);
             await message.channel.send(`<@${userId}> congrats u now have temporary free speech`);
+        } else {
+            console.log(`🎲 User @${message.author.username} (${userId}) didn't get free speech (20% chance failed)`);
         }
         activeChallenges.delete(userId);
         return;
@@ -343,9 +380,11 @@ client.on('messageCreate', async (message) => {
         const guess = parseInt(content, 10);
         
         if (!isNaN(guess) && guess === challenge.answer) {
+            console.log(`✅ User @${message.author.username} (${userId}) solved challenge correctly! (Answer: ${challenge.answer})`);
             await message.channel.send(`<@${userId}> good boy`);
             activeChallenges.set(userId, { state: 'solved' });
         } else {
+            console.log(`❌ User @${message.author.username} (${userId}) guessed wrong: ${guess} (Correct: ${challenge.answer})`);
             await message.channel.send(`<@${userId}> nuh uh, try again`);
             await sendChallenge(message.channel, userId, false);
         }
