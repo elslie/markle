@@ -297,13 +297,18 @@ client.on('messageCreate', async (message) => {
     const userId = message.author.id;
     const content = message.content.trim();
 
-    // Handle banned words for all users
+    // Handle banned words for all users (including allowed users)
     if (containsBannedWord(content)) {
         safeDelete(message);
+        try {
+            await message.channel.send(`<@${userId}> nuh uh no no word`);
+        } catch (error) {
+            console.error('Failed to send banned word warning:', error.message);
+        }
         return;
     }
 
-    // Handle allowed users - they can always speak freely
+    // Handle allowed users - they can always speak freely (after banned word check)
     if (allowedUsers.has(userId)) {
         return; // Don't interfere with allowed users
     }
