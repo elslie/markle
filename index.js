@@ -27,21 +27,25 @@ const TEST_CHANNEL_ID = '1382577291015749674';
 
 // Word/phrase responses - add your custom responses here
 const wordResponses = {
-    'gn': 'gn!!!!!', 'goodnight': 'gn!!!!!',
-    'lelll:stuck_out_tongue:': 'lelll:stuck_out_tongue:',
+    'gn': 'gn{!}', 'goodnight': 'gn{!}',
+    'lelll😛': 'lelll😛', 'lelll 😛': 'lelll😛',
     'ping': 'pong',
-    'bot': 'is that a markle reference?????',
+    'bot': 'is that a markle reference{?}',
     'marco': 'polo',
     'markle u seeing this': 'yeah ts is crazy', 'markle r u seeing this': 'yeah ts is crazy', 'markle you seeing this': 'yeah ts is crazy', 'markle are you seeing this': 'yeah ts is crazy', 'markle are u seeing this': 'yeah ts is crazy', 'markle r you seeing this': 'yeah ts is crazy',
-    'never back down never what': 'never give up!!!!!',
+    'never back down never what': 'never give up{!}',
     'what\'s up': 'the sky', 
+    'get a load of this guy': 'blud is not him',
     // Add more word/phrase responses here
     // 'trigger word': 'response message',
+    // Use {!} for random exclamation marks, {?} for random question marks
 };
 
 // Multi-word combinations (order doesn't matter)
 const multiWordResponses = new Map([
     [['markle', 'shut up'], 'fuck you'],
+    [['markle', 'fuck you'], 'fuck you too'],
+    [['talk', 'to you'], 'oh sorry']
     // Add more combinations here
     // [['word1', 'word2'], 'response when both words are present'],
 ]);
@@ -78,6 +82,7 @@ const mutedUsers = new Set(); // Track who is currently muted
 const pingPongGames = new Map(); // userId -> { timeLimit, exchanges, timeout }
 const INITIAL_PING_PONG_TIME = 5000; // 5 seconds initially
 const TIME_REDUCTION_RATE = 0.1; // 10% reduction each round
+const PING_PONG_WIN_THRESHOLD = 10; // Win after 10 successful exchanges
 
 // Utility functions
 function generateExclamations(count) {
@@ -89,19 +94,35 @@ function containsBannedWord(content) {
     return bannedWords.some(word => lower.includes(word));
 }
 
+function processRandomPunctuation(text) {
+    // Replace {!} with random number of exclamation marks (3-15)
+    text = text.replace(/\{!\}/g, () => {
+        const count = Math.floor(Math.random() * 13) + 3; // 3-15 exclamation marks
+        return '!'.repeat(count);
+    });
+    
+    // Replace {?} with random number of question marks (3-15)
+    text = text.replace(/\{\?\}/g, () => {
+        const count = Math.floor(Math.random() * 13) + 3; // 3-15 question marks
+        return '?'.repeat(count);
+    });
+    
+    return text;
+}
+
 function checkWordResponses(content) {
     const lower = content.toLowerCase();
     
     // Check for exact matches first
     if (wordResponses[lower]) {
-        return wordResponses[lower];
+        return processRandomPunctuation(wordResponses[lower]);
     }
     
     // Check for multi-word combinations (order doesn't matter)
     for (const [wordPair, response] of multiWordResponses) {
         const [word1, word2] = wordPair;
         if (lower.includes(word1.toLowerCase()) && lower.includes(word2.toLowerCase())) {
-            return response;
+            return processRandomPunctuation(response);
         }
     }
     
@@ -112,7 +133,7 @@ function checkWordResponses(content) {
     for (const [trigger, response] of Object.entries(wordResponses)) {
         if (lower.includes(trigger.toLowerCase())) {
             matchedTriggers.push(trigger);
-            matchedResponses.push(response);
+            matchedResponses.push(processRandomPunctuation(response));
         }
     }
     
@@ -151,6 +172,21 @@ function handlePingPongResponse(message, content) {
             // User responded with "ping" in time! Continue the game
             clearTimeout(game.timeout);
             
+            // Check if user won
+            if (game.exchanges >= PING_PONG_WIN_THRESHOLD) {
+                message.channel.send(`<@${userId}> wow you actually won the ping pong game! 🏆 (${game.exchanges} exchanges)`);
+                
+                try {
+                    const user = client.users.fetch(userId);
+                    user.then(u => console.log(`🏆 User @${u.username} (${userId}) WON ping-pong game with ${game.exchanges} exchanges!`));
+                } catch (error) {
+                    console.log(`🏆 User ${userId} WON ping-pong game with ${game.exchanges} exchanges!`);
+                }
+                
+                pingPongGames.delete(userId);
+                return true;
+            }
+            
             // Send "pong" and start next round
             message.channel.send('pong');
             startPingPongGame(message.channel, userId, false);
@@ -167,6 +203,21 @@ function handlePingPongResponse(message, content) {
         if (game && !game.expectingResponse) {
             // User responded with "pong" in time! Continue the game
             clearTimeout(game.timeout);
+            
+            // Check if user won
+            if (game.exchanges >= PING_PONG_WIN_THRESHOLD) {
+                message.channel.send(`<@${userId}> wow you actually won the ping pong game! 🏆 (${game.exchanges} exchanges)`);
+                
+                try {
+                    const user = client.users.fetch(userId);
+                    user.then(u => console.log(`🏆 User @${u.username} (${userId}) WON ping-pong game with ${game.exchanges} exchanges!`));
+                } catch (error) {
+                    console.log(`🏆 User ${userId} WON ping-pong game with ${game.exchanges} exchanges!`);
+                }
+                
+                pingPongGames.delete(userId);
+                return true;
+            }
             
             // Send "ping" and start next round
             message.channel.send('ping');
@@ -322,7 +373,7 @@ async function startPingPongGame(channel, userId, isInitialPing = true) {
     // Set up timeout for losing
     const timeout = setTimeout(async () => {
         try {
-            await channel.send(`<@${userId}> haha you lose`);
+            await channel.send(`<@${userId}> haha you lose (${exchanges} exchanges)`);
             
             try {
                 const user = await client.users.fetch(userId);
@@ -347,9 +398,9 @@ async function startPingPongGame(channel, userId, isInitialPing = true) {
 
     try {
         const user = await client.users.fetch(userId);
-        console.log(`🏓 User @${user.username} (${userId}) ping-pong game - Exchange: ${exchanges}, Time limit: ${(timeLimit/1000).toFixed(1)}s`);
+        console.log(`🏓 User @${user.username} (${userId}) ping-pong game - Exchange: ${exchanges}/${PING_PONG_WIN_THRESHOLD}, Time limit: ${(timeLimit/1000).toFixed(1)}s`);
     } catch (error) {
-        console.log(`🏓 User ${userId} ping-pong game - Exchange: ${exchanges}, Time limit: ${(timeLimit/1000).toFixed(1)}s`);
+        console.log(`🏓 User ${userId} ping-pong game - Exchange: ${exchanges}/${PING_PONG_WIN_THRESHOLD}, Time limit: ${(timeLimit/1000).toFixed(1)}s`);
     }
 }
 
