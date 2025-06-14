@@ -32,7 +32,7 @@ const wordResponses = {
     'ping': 'pong',
     'bot': 'is that a markle reference?????',
     'marco': 'polo',
-    'markle u seeing this': 'yeah ts is crazy', 'markle r u seeing this': 'yeah ts is crazy', 'markle you seeing this': 'yeah ts is crazy', 'markle are you seeing this': 'yeah ts is crazy', 'markle are u seeing this': 'yeah ts is crazy', 'markle r you seeing this': 'yeah ts is crazy', 'markle ru seeing this': 'yeah ts is crazy',
+    'markle u seeing this': 'yeah ts is crazy', 'markle r u seeing this': 'yeah ts is crazy', 'markle you seeing this': 'yeah ts is crazy', 'markle are you seeing this': 'yeah ts is crazy', 'markle are u seeing this': 'yeah ts is crazy', 'markle r you seeing this': 'yeah ts is crazy',
     'never back down never what': 'never give up!!!!!',
     'what\'s up': 'the sky', 'whats up': 'the sky'
     // Add more word/phrase responses here
@@ -40,12 +40,11 @@ const wordResponses = {
 };
 
 // Multi-word combinations (order doesn't matter)
-const multiWordResponses = {
-    // Format: [word1, word2]: 'response'
-    ['markle', 'shut up']: 'fuck u',
+const multiWordResponses = new Map([
+    [['markle', 'shut up'], 'fuck you'],
     // Add more combinations here
-    // ['word1', 'word2']: 'response when both words are present',
-};
+    // [['word1', 'word2'], 'response when both words are present'],
+]);
 
 // User sets
 const allowedUsers = new Set(
@@ -75,6 +74,11 @@ const muteTimeouts = new Map();
 const countdownIntervals = new Map();
 const mutedUsers = new Set(); // Track who is currently muted
 
+// Ping-pong game state
+const pingPongGames = new Map(); // userId -> { timeLimit, exchanges, timeout }
+const INITIAL_PING_PONG_TIME = 5000; // 5 seconds initially
+const TIME_REDUCTION_RATE = 0.1; // 10% reduction each round
+
 // Utility functions
 function generateExclamations(count) {
     return '!'.repeat(count);
@@ -94,7 +98,7 @@ function checkWordResponses(content) {
     }
     
     // Check for multi-word combinations (order doesn't matter)
-    for (const [wordPair, response] of Object.entries(multiWordResponses)) {
+    for (const [wordPair, response] of multiWordResponses) {
         const [word1, word2] = wordPair;
         if (lower.includes(word1.toLowerCase()) && lower.includes(word2.toLowerCase())) {
             return response;
@@ -135,6 +139,46 @@ function checkWordResponses(content) {
     return null; // No matching response found
 }
 
+function handlePingPongResponse(message, content) {
+    const userId = message.author.id;
+    const lower = content.toLowerCase();
+    
+    // Check if user has an active ping-pong game
+    const game = pingPongGames.get(userId);
+    
+    if (lower === 'ping') {
+        if (game && game.expectingResponse) {
+            // User responded with "ping" in time! Continue the game
+            clearTimeout(game.timeout);
+            
+            // Send "pong" and start next round
+            message.channel.send('pong');
+            startPingPongGame(message.channel, userId, false);
+            return true; // Handled as ping-pong
+        } else if (!game) {
+            // Start new ping-pong game
+            message.channel.send('pong');
+            startPingPongGame(message.channel, userId, false);
+            return true; // Handled as ping-pong
+        }
+    }
+    
+    if (lower === 'pong') {
+        if (game && !game.expectingResponse) {
+            // User responded with "pong" in time! Continue the game
+            clearTimeout(game.timeout);
+            
+            // Send "ping" and start next round
+            message.channel.send('ping');
+            startPingPongGame(message.channel, userId, false);
+            pingPongGames.get(userId).expectingResponse = true;
+            return true; // Handled as ping-pong
+        }
+    }
+    
+    return false; // Not handled as ping-pong
+}
+
 function safeDelete(message) {
     deleteQueue.push(async () => {
         try {
@@ -153,10 +197,20 @@ async function clearUserState(userId) {
     const hadChallenge = activeChallenges.has(userId);
     const hadFreeSpeech = freeSpeechTimers.has(userId);
     const wasMuted = mutedUsers.has(userId);
+    const hadPingPong = pingPongGames.has(userId);
     
     activeChallenges.delete(userId);
     freeSpeechTimers.delete(userId);
     mutedUsers.delete(userId); // Remove from muted users
+    
+    // Clear ping-pong game
+    if (pingPongGames.has(userId)) {
+        const game = pingPongGames.get(userId);
+        if (game.timeout) {
+            clearTimeout(game.timeout);
+        }
+        pingPongGames.delete(userId);
+    }
     
     if (muteTimeouts.has(userId)) {
         clearTimeout(muteTimeouts.get(userId));
@@ -168,12 +222,12 @@ async function clearUserState(userId) {
         countdownIntervals.delete(userId);
     }
     
-    if (hadChallenge || hadFreeSpeech || wasMuted) {
+    if (hadChallenge || hadFreeSpeech || wasMuted || hadPingPong) {
         try {
             const user = await client.users.fetch(userId);
-            console.log(`🧹 Cleared state for @${user.username} (${userId}) - Challenge: ${hadChallenge}, FreeSpeech: ${hadFreeSpeech}, Muted: ${wasMuted}`);
+            console.log(`🧹 Cleared state for @${user.username} (${userId}) - Challenge: ${hadChallenge}, FreeSpeech: ${hadFreeSpeech}, Muted: ${wasMuted}, PingPong: ${hadPingPong}`);
         } catch (error) {
-            console.log(`🧹 Cleared state for user ${userId} - Challenge: ${hadChallenge}, FreeSpeech: ${hadFreeSpeech}, Muted: ${wasMuted}`);
+            console.log(`🧹 Cleared state for user ${userId} - Challenge: ${hadChallenge}, FreeSpeech: ${hadFreeSpeech}, Muted: ${wasMuted}, PingPong: ${hadPingPong}`);
         }
     }
 }
@@ -248,6 +302,55 @@ async function startFreeSpeechCountdown(channel, userId) {
     }, COUNTDOWN_INTERVAL);
     
     countdownIntervals.set(userId, interval);
+}
+
+async function startPingPongGame(channel, userId, isInitialPing = true) {
+    // Clear any existing ping-pong game for this user
+    if (pingPongGames.has(userId)) {
+        const existingGame = pingPongGames.get(userId);
+        if (existingGame.timeout) {
+            clearTimeout(existingGame.timeout);
+        }
+    }
+
+    const currentGame = pingPongGames.get(userId) || { exchanges: 0 };
+    const timeLimit = isInitialPing ? INITIAL_PING_PONG_TIME : 
+                     Math.max(1000, INITIAL_PING_PONG_TIME * Math.pow(1 - TIME_REDUCTION_RATE, currentGame.exchanges));
+    
+    const exchanges = isInitialPing ? 0 : currentGame.exchanges + 1;
+    
+    // Set up timeout for losing
+    const timeout = setTimeout(async () => {
+        try {
+            await channel.send(`<@${userId}> haha you lose`);
+            
+            try {
+                const user = await client.users.fetch(userId);
+                console.log(`🏓 User @${user.username} (${userId}) lost ping-pong game after ${exchanges} exchanges (timeout: ${(timeLimit/1000).toFixed(1)}s)`);
+            } catch (error) {
+                console.log(`🏓 User ${userId} lost ping-pong game after ${exchanges} exchanges (timeout: ${(timeLimit/1000).toFixed(1)}s)`);
+            }
+            
+            pingPongGames.delete(userId);
+        } catch (error) {
+            console.error('Failed to send ping-pong loss message:', error.message);
+        }
+    }, timeLimit);
+
+    // Store game state
+    pingPongGames.set(userId, {
+        timeLimit,
+        exchanges,
+        timeout,
+        expectingResponse: !isInitialPing // If not initial ping, we're expecting "ping" response
+    });
+
+    try {
+        const user = await client.users.fetch(userId);
+        console.log(`🏓 User @${user.username} (${userId}) ping-pong game - Exchange: ${exchanges}, Time limit: ${(timeLimit/1000).toFixed(1)}s`);
+    } catch (error) {
+        console.log(`🏓 User ${userId} ping-pong game - Exchange: ${exchanges}, Time limit: ${(timeLimit/1000).toFixed(1)}s`);
+    }
 }
 
 // Delete queue processor
@@ -377,6 +480,7 @@ client.on('interactionCreate', async interaction => {
                     { name: 'Active Challenges', value: activeChallenges.size.toString(), inline: true },
                     { name: 'Muted Users', value: mutedUsers.size.toString(), inline: true },
                     { name: 'Free Speech Timers', value: freeSpeechTimers.size.toString(), inline: true },
+                    { name: 'Ping-Pong Games', value: pingPongGames.size.toString(), inline: true },
                     { name: 'Delete Queue', value: deleteQueue.length.toString(), inline: true }
                 )
                 .setTimestamp();
@@ -427,6 +531,11 @@ client.on('messageCreate', async (message) => {
 
     // Handle allowed users - they can always speak freely (after banned word check)
     if (allowedUsers.has(userId)) {
+        // Check for ping-pong game first (even for allowed users)
+        if (handlePingPongResponse(message, content)) {
+            return; // Ping-pong handled
+        }
+        
         // Check for word responses even for allowed users
         const response = checkWordResponses(content);
         if (response) {
@@ -442,6 +551,11 @@ client.on('messageCreate', async (message) => {
 
     // Check if this user is currently muted
     if (!mutedUsers.has(userId)) {
+        // Check for ping-pong game first (for non-muted users)
+        if (handlePingPongResponse(message, content)) {
+            return; // Ping-pong handled
+        }
+        
         // Check for word responses for non-muted users
         const response = checkWordResponses(content);
         if (response) {
