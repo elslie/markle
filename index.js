@@ -27,16 +27,24 @@ const TEST_CHANNEL_ID = '1382577291015749674';
 
 // Word/phrase responses - add your custom responses here
 const wordResponses = {
-    'gn': 'gn!!!!!', 'goodnight': 'gn!!!!!'
-    'lelll😛': 'lelll😛',
+    'gn': 'gn!!!!!', 'goodnight': 'gn!!!!!',
+    'lelll:stuck_out_tongue:': 'lelll:stuck_out_tongue:',
     'ping': 'pong',
     'bot': 'is that a markle reference?????',
     'marco': 'polo',
-    'markle u seeing this': 'yeah ts is crazy', 'markle r u seeing this': 'yeah ts is crazy', 'markle you seeing this': 'yeah ts is crazy', 'markle are you seeing this': 'yeah ts is crazy', 'markle are u seeing this': 'yeah ts is crazy', 'markle r you seeing this': 'yeah ts is crazy',
-    'never back down never what': 'never give up!!!!!'
+    'markle u seeing this': 'yeah ts is crazy', 'markle r u seeing this': 'yeah ts is crazy', 'markle you seeing this': 'yeah ts is crazy', 'markle are you seeing this': 'yeah ts is crazy', 'markle are u seeing this': 'yeah ts is crazy', 'markle r you seeing this': 'yeah ts is crazy', 'markle ru seeing this': 'yeah ts is crazy',
+    'never back down never what': 'never give up!!!!!',
     'what\'s up': 'the sky', 'whats up': 'the sky'
     // Add more word/phrase responses here
     // 'trigger word': 'response message',
+};
+
+// Multi-word combinations (order doesn't matter)
+const multiWordResponses = {
+    // Format: [word1, word2]: 'response'
+    ['markle', 'shut up']: 'fuck u',
+    // Add more combinations here
+    // ['word1', 'word2']: 'response when both words are present',
 };
 
 // User sets
@@ -85,11 +93,43 @@ function checkWordResponses(content) {
         return wordResponses[lower];
     }
     
-    // Check if any trigger word/phrase is contained in the message
-    for (const [trigger, response] of Object.entries(wordResponses)) {
-        if (lower.includes(trigger.toLowerCase())) {
+    // Check for multi-word combinations (order doesn't matter)
+    for (const [wordPair, response] of Object.entries(multiWordResponses)) {
+        const [word1, word2] = wordPair;
+        if (lower.includes(word1.toLowerCase()) && lower.includes(word2.toLowerCase())) {
             return response;
         }
+    }
+    
+    // Collect all matching single triggers
+    const matchedTriggers = [];
+    const matchedResponses = [];
+    
+    for (const [trigger, response] of Object.entries(wordResponses)) {
+        if (lower.includes(trigger.toLowerCase())) {
+            matchedTriggers.push(trigger);
+            matchedResponses.push(response);
+        }
+    }
+    
+    // Different response strategies:
+    if (matchedResponses.length > 1) {
+        // Option 1: Join all responses (current implementation)
+        return matchedResponses.join(' ');
+        
+        // Option 2: Special message for multiple triggers
+        // return `Multiple triggers detected: ${matchedResponses.join(' | ')}`;
+        
+        // Option 3: Random response from matched ones
+        // return matchedResponses[Math.floor(Math.random() * matchedResponses.length)];
+        
+        // Option 4: Count-based response
+        // return `Wow, ${matchedResponses.length} triggers! ${matchedResponses.join(' ')}`;
+    }
+    
+    // Single match (original behavior)
+    if (matchedResponses.length === 1) {
+        return matchedResponses[0];
     }
     
     return null; // No matching response found
