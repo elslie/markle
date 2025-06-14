@@ -35,6 +35,8 @@ const wordResponses = {
     'markle u seeing this': 'yeah ts is crazy', 'markle r u seeing this': 'yeah ts is crazy', 'markle you seeing this': 'yeah ts is crazy', 'markle are you seeing this': 'yeah ts is crazy', 'markle are u seeing this': 'yeah ts is crazy', 'markle r you seeing this': 'yeah ts is crazy',
     'never back down never what': 'never give up{!}',
     'what\'s up': 'the sky', 
+    'shut up', 'fuck you',
+    'fuck you', 'fuck you too',
     // Add more word/phrase responses here
     // 'trigger word': 'response message',
     // Use {!} for random exclamation marks, {?} for random question marks
