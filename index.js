@@ -34,7 +34,7 @@ const wordResponses = {
     'marco': 'polo',
     'markle u seeing this': 'yeah ts is crazy', 'markle r u seeing this': 'yeah ts is crazy', 'markle you seeing this': 'yeah ts is crazy', 'markle are you seeing this': 'yeah ts is crazy', 'markle are u seeing this': 'yeah ts is crazy', 'markle r you seeing this': 'yeah ts is crazy',
     'never back down never what': 'never give up!!!!!',
-    'what\'s up': 'the sky', 'whats up': 'the sky'
+    'what\'s up': 'the sky', 
     // Add more word/phrase responses here
     // 'trigger word': 'response message',
 };
