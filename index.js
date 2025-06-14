@@ -15,26 +15,15 @@ app.listen(PORT, () => {
 import dotenv from 'dotenv';
 dotenv.config();
 
-import { 
-  Client, 
-  GatewayIntentBits, 
-  Partials, 
-  Collection, 
-  REST, 
-  Routes, 
-  SlashCommandBuilder,
-  InteractionResponseFlags
-} from 'discord.js';
+import { Client, GatewayIntentBits, Partials, Collection, REST, Routes, SlashCommandBuilder } from 'discord.js';
 
 const bannedWords = ['yao', 'fag', 'retard', 'cunt', 'bashno'];
 
-// Load allowed blocked users from .env (comma separated IDs)
 const allowedUsers = new Set(
   process.env.ALLOWED_USERS?.split(',').map(id => id.trim()) || []
 );
 
-// Load users authorized to use slash commands (comma separated IDs)
-const authorizedCommandUsers = new Set(
+const allowedSlashCommandUsers = new Set(
   process.env.SLASH_COMMAND_USERS?.split(',').map(id => id.trim()) || []
 );
 
@@ -52,7 +41,6 @@ const activeChallenges = new Map();
 const freeSpeechTimers = new Map();
 const deleteQueue = [];
 const muteTimeouts = new Map();
-
 const FREE_SPEECH_DURATION = 30 * 1000;
 
 function generateExclamations(count) {
@@ -104,11 +92,10 @@ client.once('ready', async () => {
     }
   }, 60 * 1000);
 
-  // Register slash commands with duration option for mute:
   const commands = [
     new SlashCommandBuilder()
       .setName('mute')
-      .setDescription('Start a !!! challenge for a user for specified duration (seconds)')
+      .setDescription('Start a !!! challenge for a user')
       .addUserOption(opt => opt.setName('user').setDescription('User to challenge').setRequired(true))
       .addIntegerOption(opt => opt.setName('duration').setDescription('Mute duration in seconds').setRequired(false)),
     new SlashCommandBuilder()
@@ -130,25 +117,19 @@ client.once('ready', async () => {
 client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;
 
-  // Check if user can run commands
-  if (!authorizedCommandUsers.has(interaction.user.id)) {
-    return interaction.reply({ content: 'You are not allowed to use this command.', flags: InteractionResponseFlags.Ephemeral });
+  if (!allowedSlashCommandUsers.has(interaction.user.id)) {
+    return interaction.reply({ content: 'You are not allowed to use this command.', ephemeral: true });
   }
 
   const user = interaction.options.getUser('user');
 
   if (interaction.commandName === 'mute') {
-    const duration = interaction.options.getInteger('duration') || 30;
     const channel = interaction.channel;
-
     await sendChallenge(channel, user.id);
 
-    // Clear existing mute timeout if any:
-    if (muteTimeouts.has(user.id)) {
-      clearTimeout(muteTimeouts.get(user.id));
-    }
+    const duration = interaction.options.getInteger('duration') || 30;
+    if (muteTimeouts.has(user.id)) clearTimeout(muteTimeouts.get(user.id));
 
-    // Set timeout to auto unmute:
     const timeout = setTimeout(() => {
       activeChallenges.delete(user.id);
       freeSpeechTimers.delete(user.id);
@@ -158,18 +139,13 @@ client.on('interactionCreate', async interaction => {
 
     muteTimeouts.set(user.id, timeout);
 
-    interaction.reply({ content: `Challenge started for <@${user.id}>. Duration: ${duration} seconds.`, flags: InteractionResponseFlags.Ephemeral });
-
+    interaction.reply({ content: `Challenge started for <@${user.id}> for ${duration} seconds.`, ephemeral: true });
   } else if (interaction.commandName === 'unmute') {
     activeChallenges.delete(user.id);
     freeSpeechTimers.delete(user.id);
-
-    if (muteTimeouts.has(user.id)) {
-      clearTimeout(muteTimeouts.get(user.id));
-      muteTimeouts.delete(user.id);
-    }
-
-    interaction.reply({ content: `Challenge cleared for <@${user.id}>.`, flags: InteractionResponseFlags.Ephemeral });
+    if (muteTimeouts.has(user.id)) clearTimeout(muteTimeouts.get(user.id));
+    muteTimeouts.delete(user.id);
+    interaction.reply({ content: `Challenge cleared for <@${user.id}>.`, ephemeral: true });
   }
 });
 
@@ -180,14 +156,7 @@ client.on('messageCreate', async (message) => {
   const username = `<@${userId}>`;
   const content = message.content.trim();
 
-  // Always block users in allowedUsers list (delete messages)
-  if (allowedUsers.has(userId)) {
-    deleteQueue.push(() => message.delete());
-    return;
-  }
-
-  // Also delete messages containing banned words for everyone else (but no challenge)
-  if (containsBannedWord(content)) {
+  if (allowedUsers.has(userId) || containsBannedWord(content)) {
     deleteQueue.push(() => message.delete());
     return;
   }
@@ -232,7 +201,7 @@ client.on('messageCreate', async (message) => {
     return;
   }
 
-  // No blocking/challenge if user not in allowedUsers or activeChallenges
+  await sendChallenge(message.channel, userId, true);
 });
 
 client.login(process.env.TOKEN);
