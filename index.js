@@ -201,6 +201,10 @@ function checkWordResponses(content) {
         return 'wsg';
     }
 
+    if (/^ gn$/i.test(originalMessage)) {
+        return processRandomPuctuation('gn{!}');
+    }
+
     if (/^gn$/i.test(originalMessage)) {
         return processRandomPunctuation('gn{!}');
     }
