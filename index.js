@@ -195,16 +195,16 @@ function processRandomPunctuation(text) {
 function checkWordResponses(content) {
     const lower = content.toLowerCase();
     const originalMessage = content.trim(); // Keep original for exact matching
-    
-    // SPECIAL CASE: Message only contains "markle" (any capitalization)
+
     if (/^markle$/i.test(originalMessage)) {
         return 'wsg';
     }
 
-    if (/^gn$/i.test(originalMessage)) {
+    // SPECIAL CASE: Message contains "gn" as a separate word (not part of another word)
+    if (/\bgn\b/i.test(originalMessage)) {
         return processRandomPunctuation('gn{!}');
     }
-    
+
     // Check for exact phrase matches first (highest priority)
     if (wordResponses[lower]) {
         return processRandomPunctuation(wordResponses[lower]);
