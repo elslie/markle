@@ -109,6 +109,51 @@ const pingPongGames = new Map();        // userId -> ping-pong game state
 // =============================================================================
 
 /**
+ * Safely deletes a message
+ */
+function safeDelete(message) {
+    deleteQueue.push(async () => {
+        try {
+            if (message.deletable) {
+                await message.delete();
+            }
+        } catch (error) {
+            if (error.code !== 10008) { // Unknown Message error
+                console.error('Delete failed:', error.message);
+            }
+        }
+    });
+}
+
+/**
+ * Clears all user state (challenges, timers, games)
+ */
+function clearUserState(userId) {
+    activeChallenges.delete(userId);
+    mutedUsers.delete(userId);
+    freeSpeechTimers.delete(userId);
+    
+    // Clear ping-pong game
+    const game = pingPongGames.get(userId);
+    if (game?.timeout) clearTimeout(game.timeout);
+    pingPongGames.delete(userId);
+    
+    // Clear mute timeout
+    const muteTimeout = muteTimeouts.get(userId);
+    if (muteTimeout) {
+        clearTimeout(muteTimeout);
+        muteTimeouts.delete(userId);
+    }
+    
+    // Clear countdown interval
+    const countdownInterval = countdownIntervals.get(userId);
+    if (countdownInterval) {
+        clearInterval(countdownInterval);
+        countdownIntervals.delete(userId);
+    }
+}
+
+/**
  * Creates a string of repeated exclamation marks
  */
 function generateExclamations(count) {
@@ -375,47 +420,6 @@ async function startFreeSpeechCountdown(channel, userId) {
     }, COUNTDOWN_INTERVAL);
     
     countdownIntervals.set(userId, interval);
-}
-
-/**
- * Starts or continues a ping-pong game
- * Game gets faster each round, user wins after PING_PONG_WIN_THRESHOLD exchanges
- */
-async function startPingPongGame(channel, userId, isInitialPing = true) {
-    // Clear existing game if any
-    if (pingPongGames.has(userId)) {
-        const existingGame = pingPongGames.get(userId);
-        if (existingGame.timeout) clearTimeout(existingGame.timeout);
-    }
-
-    const currentGame = pingPongGames.get(userId) || { exchanges: 0 };
-    
-    // Calculate time limit (gets faster each round)
-    const timeLimit = isInitialPing ? INITIAL_PING_PONG_TIME : 
-                     Math.max(1000, INITIAL_PING_PONG_TIME * Math.pow(1 - TIME_REDUCTION_RATE, currentGame.exchanges));
-    
-    const exchanges = isInitialPing ? 0 : currentGame.exchanges + 1;
-    
-    // Set timeout for losing
-    const timeout = setTimeout(async () => {
-        try {
-            await channel.send(`<@${userId}> haha you lose (${exchanges} exchanges)`);
-            console.log(`🏓 User ${userId} lost ping-pong game after ${exchanges} exchanges`);
-            pingPongGames.delete(userId);
-        } catch (error) {
-            console.error('Failed to send ping-pong loss message:', error.message);
-        }
-    }, timeLimit);
-
-    // Store game state
-    pingPongGames.set(userId, {
-        timeLimit,
-        exchanges,
-        timeout,
-        expectingResponse: !isInitialPing
-    });
-
-    console.log(`🏓 User ${userId} ping-pong game - Exchange: ${exchanges}/${PING_PONG_WIN_THRESHOLD}, Time: ${(timeLimit/1000).toFixed(1)}s`);
 }
 
 // =============================================================================
