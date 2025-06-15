@@ -202,7 +202,7 @@ function checkWordResponses(content) {
     }
 
     if (/^gn$/i.test(originalMessage)) {
-        return 'gn{!}';
+        return processRandomPunctuation('gn{!}');
     }
     
     // Check for exact phrase matches first (highest priority)
