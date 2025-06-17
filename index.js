@@ -205,6 +205,10 @@ function checkWordResponses(content) {
         return processRandomPunctuation('gn{!}');
     }
 
+    if (/\bcya\b/i.test(originalMessage)) {
+        return processRandomPunctuation('cya{!}');
+    }
+
     // Check for exact phrase matches first (highest priority)
     if (wordResponses[lower]) {
         return processRandomPunctuation(wordResponses[lower]);
