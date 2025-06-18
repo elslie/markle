@@ -17,7 +17,7 @@ dotenv.config();
 // =============================================================================
 
 // Words that will trigger automatic deletion and warnings
-const bannedWords = ['yao', 'fag', 'retard', 'cunt', 'bashno'];
+const bannedWords = ['yao', 'fag', 'retard', 'cunt', 'bashno', 'aoi'];
 // Add or remove words as needed: ['word1', 'word2', 'word3']
 
 // Timing settings (in milliseconds)
@@ -45,6 +45,7 @@ const wordResponses = {
     'markle u seeing this': 'yeah ts is crazy',  'markle r u seeing this': 'yeah ts is crazy',  'markle you seeing this': 'yeah ts is crazy',  'markle are you seeing this': 'yeah ts is crazy', 'markle are u seeing this': 'yeah ts is crazy', 'markle r you seeing this': 'yeah ts is crazy',
     'pls sleep': 'fr',
     'good morning': 'good morning{!}',
+    'lelll🤑': 'get a load of this guy lmao', 'lelll 🤑': 'get a load of this guy lmao',
     // ADD YOUR CUSTOM RESPONSES HERE:
     // 'trigger phrase': 'bot response{!}',
     // 'hello': 'hi there{!}',
