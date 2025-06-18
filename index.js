@@ -43,8 +43,8 @@ const wordResponses = {
     'never back down never what': 'never give up{!}',
     'bot': 'is that a markle reference{?}',
     'markle u seeing this': 'yeah ts is crazy',  'markle r u seeing this': 'yeah ts is crazy',  'markle you seeing this': 'yeah ts is crazy',  'markle are you seeing this': 'yeah ts is crazy', 'markle are u seeing this': 'yeah ts is crazy', 'markle r you seeing this': 'yeah ts is crazy',
-    'pls sleep': 'fr'
-    'good morning': 'good morning{!}'
+    'pls sleep': 'fr',
+    'good morning': 'good morning{!}',
     // ADD YOUR CUSTOM RESPONSES HERE:
     // 'trigger phrase': 'bot response{!}',
     // 'hello': 'hi there{!}',
