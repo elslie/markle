@@ -2,7 +2,7 @@
 // DISCORD MODERATION BOT - MAIN CONFIGURATION
 // =============================================================================
 // This bot provides word filtering, counting challenges, ping-pong games,
-// temporary free speech rewards, and productivity lock-in timer for Discord servers.
+// temporary free speech rewards, and productivity lock-in sessions for Discord servers.
 
 // Basic imports and setup (you won't need to change these)
 import './keepAlive.js';
@@ -17,7 +17,7 @@ dotenv.config();
 // =============================================================================
 
 // Words that will trigger automatic deletion and warnings
-const bannedWords = ['yao', 'fag', 'retard', 'cunt', 'bashno', 'aoi'];
+const bannedWords = ['yao', 'fag', 'retard', 'cunt', 'bashno'];
 // Add or remove words as needed: ['word1', 'word2', 'word3']
 
 // Timing settings (in milliseconds)
@@ -25,8 +25,8 @@ const FREE_SPEECH_DURATION = 30 * 1000;    // How long free speech lasts (30 sec
 const DELETE_QUEUE_INTERVAL = 100;         // Delay between deletions (prevents rate limits)
 const KEEP_ALIVE_INTERVAL = 60 * 1000;     // Keep-alive ping frequency (60 seconds)
 const COUNTDOWN_INTERVAL = 5000;           // How often countdown updates (5 seconds)
-const LOCK_IN_BREAK_DURATION = 5 * 60 * 1000; // 5 minutes break duration
-const LOCK_IN_BREAK_COOLDOWN = 5 * 60 * 1000; // 5 minutes cooldown between breaks
+const LOCK_IN_BREAK_DURATION = 5 * 60 * 1000; // 5 minutes break
+const LOCK_IN_BREAK_COOLDOWN = 5 * 60 * 1000; // 5 minutes cooldown
 
 // Your test channel ID (where keep-alive messages are sent)
 const TEST_CHANNEL_ID = '1382577291015749674';
@@ -47,7 +47,6 @@ const wordResponses = {
     'markle u seeing this': 'yeah ts is crazy',  'markle r u seeing this': 'yeah ts is crazy',  'markle you seeing this': 'yeah ts is crazy',  'markle are you seeing this': 'yeah ts is crazy', 'markle are u seeing this': 'yeah ts is crazy', 'markle r you seeing this': 'yeah ts is crazy',
     'pls sleep': 'fr',
     'good morning': 'good morning{!}',
-    'lelll🤑': 'get a load of this guy lmao', 'lelll 🤑': 'get a load of this guy lmao',
     // ADD YOUR CUSTOM RESPONSES HERE:
     // 'trigger phrase': 'bot response{!}',
     // 'hello': 'hi there{!}',
@@ -108,7 +107,6 @@ const countdownIntervals = new Map();   // userId -> countdown interval
 const mutedUsers = new Set();           // Set of currently muted users
 const pingPongGames = new Map();        // userId -> ping-pong game state
 const lockInSessions = new Map();       // userId -> lock-in session data
-const lockInBreaks = new Map();         // userId -> break state data
 
 // =============================================================================
 // UTILITY FUNCTIONS
@@ -157,19 +155,14 @@ function clearUserState(userId) {
         clearInterval(countdownInterval);
         countdownIntervals.delete(userId);
     }
-}
-
-/**
- * Clears lock-in session data for a user
- */
-function clearLockInState(userId) {
-    const session = lockInSessions.get(userId);
-    if (session) {
-        if (session.breakTimer) clearTimeout(session.breakTimer);
-        if (session.breakCooldownTimer) clearTimeout(session.breakCooldownTimer);
+    
+    // Clear lock-in session
+    const lockIn = lockInSessions.get(userId);
+    if (lockIn) {
+        if (lockIn.breakCooldownTimeout) clearTimeout(lockIn.breakCooldownTimeout);
+        if (lockIn.breakEndTimeout) clearTimeout(lockIn.breakEndTimeout);
         lockInSessions.delete(userId);
     }
-    lockInBreaks.delete(userId);
 }
 
 /**
@@ -446,128 +439,128 @@ async function startFreeSpeechCountdown(channel, userId) {
 }
 
 /**
- * Starts a lock-in session for a user
+ * Starts a lock-in productivity session
+ * User gets muted but can request 5-minute breaks with cooldown
  */
 async function startLockInSession(channel, userId) {
-    // Clear any existing session
-    clearLockInState(userId);
-    
-    // Create lock-in session
+    mutedUsers.add(userId);
     lockInSessions.set(userId, {
         startTime: Date.now(),
-        onBreak: false,
         canTakeBreak: true,
-        lastBreakTime: null,
-        breakTimer: null,
-        breakCooldownTimer: null
+        breakCooldownTimeout: null,
+        breakEndTimeout: null,
+        onBreak: false
     });
     
-    // Mute the user with exclamation marks challenge
-    mutedUsers.add(userId);
-    await sendChallenge(channel, userId, true);
-    
+    await channel.send(`<@${userId}> !!! lock-in session started! you're now muted for productivity. good luck! 🔒`);
     console.log(`🔒 User ${userId} started lock-in session`);
-    await channel.send(`<@${userId}> lock-in session started! you are now muted. focus mode activated 🔥`);
+    
+    // Send break prompt periodically (every 10 minutes)
+    sendBreakPrompt(channel, userId);
 }
 
 /**
- * Ends a lock-in session for a user
+ * Sends break prompt to user during lock-in session
  */
-async function endLockInSession(channel, userId) {
+async function sendBreakPrompt(channel, userId) {
     const session = lockInSessions.get(userId);
-    if (!session) return false;
+    if (!session || session.onBreak) return;
     
-    const duration = Math.floor((Date.now() - session.startTime) / 60000); // minutes
-    
-    // Clear all states
-    clearLockInState(userId);
-    clearUserState(userId);
-    
-    console.log(`🔓 User ${userId} ended lock-in session after ${duration} minutes`);
-    await channel.send(`<@${userId}> lock-in session ended! you were locked in for ${duration} minutes. great work! 💪`);
-    
-    return true;
-}
-
-/**
- * Sends break offer to user during lock-in
- */
-async function sendBreakOffer(channel, userId) {
-    const session = lockInSessions.get(userId);
-    if (!session || !session.canTakeBreak) return;
+    const embed = new EmbedBuilder()
+        .setTitle('☕ Break Time?')
+        .setDescription('do you want to take a break for 5 mins (you cannot take another break for 5 mins after this break)')
+        .setColor('#ffa500');
     
     const row = new ActionRowBuilder()
         .addComponents(
             new ButtonBuilder()
                 .setCustomId(`break_yes_${userId}`)
                 .setLabel('yeah')
-                .setStyle(ButtonStyle.Success),
+                .setStyle(ButtonStyle.Primary),
             new ButtonBuilder()
                 .setCustomId(`break_no_${userId}`)
                 .setLabel('nah')
-                .setStyle(ButtonStyle.Danger)
+                .setStyle(ButtonStyle.Secondary)
         );
     
-    try {
-        await channel.send({
-            content: `<@${userId}> do you want to take a break for 5 mins (you cannot take another break for 5 mins after this break)`,
-            components: [row]
-        });
-    } catch (error) {
-        console.error('Failed to send break offer:', error.message);
-    }
+    await channel.send({ content: `<@${userId}>`, embeds: [embed], components: [row] });
+    
+    // Schedule next break prompt in 10 minutes if session is still active
+    setTimeout(() => {
+        if (lockInSessions.has(userId) && !lockInSessions.get(userId).onBreak) {
+            sendBreakPrompt(channel, userId);
+        }
+    }, 10 * 60 * 1000); // 10 minutes
 }
 
 /**
- * Starts a break for a user during lock-in
+ * Ends a lock-in productivity session
  */
-async function startLockInBreak(channel, userId) {
+async function endLockInSession(channel, userId) {
+    const session = lockInSessions.get(userId);
+    if (!session) return false;
+    
+    const duration = Math.floor((Date.now() - session.startTime) / 1000 / 60); // minutes
+    
+    // Clear session data
+    if (session.breakCooldownTimeout) {
+        clearTimeout(session.breakCooldownTimeout);
+    }
+    if (session.breakEndTimeout) {
+        clearTimeout(session.breakEndTimeout);
+    }
+    lockInSessions.delete(userId);
+    mutedUsers.delete(userId);
+    
+    await channel.send(`<@${userId}> lock-in session ended! you stayed focused for ${duration} minutes. great work! 🎉`);
+    console.log(`🔓 User ${userId} ended lock-in session after ${duration} minutes`);
+    return true;
+}
+
+/**
+ * Handles lock-in break requests
+ */
+async function handleLockInBreak(channel, userId, takeBreak) {
     const session = lockInSessions.get(userId);
     if (!session) return;
     
-    // Update session state
-    session.onBreak = true;
-    session.canTakeBreak = false;
-    session.lastBreakTime = Date.now();
-    
-    // Unmute user temporarily
-    mutedUsers.delete(userId);
-    clearUserState(userId);
-    
-    console.log(`☕ User ${userId} started lock-in break`);
-    await channel.send(`<@${userId}> break time! you have 5 minutes to chill 😎`);
-    
-    // Set timer to end break
-    session.breakTimer = setTimeout(async () => {
-        await endLockInBreak(channel, userId);
-    }, LOCK_IN_BREAK_DURATION);
-    
-    // Set cooldown timer
-    session.breakCooldownTimer = setTimeout(() => {
-        const currentSession = lockInSessions.get(userId);
-        if (currentSession && !currentSession.onBreak) {
-            currentSession.canTakeBreak = true;
-            console.log(`⏰ User ${userId} can take break again`);
+    if (takeBreak) {
+        if (!session.canTakeBreak) {
+            await channel.send(`<@${userId}> you're still on break cooldown! try again in a few minutes.`);
+            return;
         }
-    }, LOCK_IN_BREAK_COOLDOWN);
-}
-
-/**
- * Ends a break during lock-in session
- */
-async function endLockInBreak(channel, userId) {
-    const session = lockInSessions.get(userId);
-    if (!session || !session.onBreak) return;
-    
-    // Update session state
-    session.onBreak = false;
-    
-    // Mute user again
-    mutedUsers.add(userId);
-    await sendChallenge(channel, userId, true);
-    
-    console.log(`🔒 User ${userId} break ended, back to lock-in`);
-    await channel.send(`<@${userId}> break's over! back to work 💪 (can't take another break for 5 more minutes)`);
+        
+        // Start 5-minute break
+        mutedUsers.delete(userId); // Unmute for break
+        session.canTakeBreak = false;
+        session.onBreak = true;
+        
+        await channel.send(`<@${userId}> break time! you have 5 minutes to relax 😌`);
+        console.log(`☕ User ${userId} started 5-minute break`);
+        
+        // End break after 5 minutes
+        session.breakEndTimeout = setTimeout(async () => {
+            if (!lockInSessions.has(userId)) return; // Session ended
+            
+            const currentSession = lockInSessions.get(userId);
+            mutedUsers.add(userId); // Mute again
+            currentSession.onBreak = false;
+            await channel.send(`<@${userId}> !!! break over! back to work! 💪`);
+            console.log(`🔒 User ${userId} break ended, back to lock-in`);
+            
+            // Start 5-minute cooldown before next break
+            currentSession.breakCooldownTimeout = setTimeout(() => {
+                if (lockInSessions.has(userId)) {
+                    lockInSessions.get(userId).canTakeBreak = true;
+                    console.log(`✅ User ${userId} can take break again`);
+                }
+            }, LOCK_IN_BREAK_COOLDOWN);
+            
+        }, LOCK_IN_BREAK_DURATION);
+        
+    } else {
+        await channel.send(`<@${userId}> alright, stay focused! 💪`);
+    }
 }
 
 // =============================================================================
@@ -627,8 +620,8 @@ client.once('ready', async () => {
                    .setDescription('Action to perform')
                    .setRequired(false)
                    .addChoices(
-                       { name: 'Start', value: 'start' },
-                       { name: 'End', value: 'end' }
+                       { name: 'start', value: 'start' },
+                       { name: 'end', value: 'end' }
                    ))
     ].map(cmd => cmd.toJSON());
 
@@ -644,21 +637,53 @@ client.once('ready', async () => {
 });
 
 // =============================================================================
+// BUTTON INTERACTION HANDLER
+// =============================================================================
+client.on('interactionCreate', async interaction => {
+    if (!interaction.isButton()) return;
+    
+    const [action, response, userId] = interaction.customId.split('_');
+    
+    // Only the user who triggered the command can respond
+    if (interaction.user.id !== userId) {
+        return interaction.reply({ content: '❌ This is not your lock-in session.', flags: MessageFlags.Ephemeral });
+    }
+    
+    try {
+        if (action === 'lockin') {
+            if (response === 'yes') {
+                await startLockInSession(interaction.channel, userId);
+                await interaction.update({ content: '🔒 Lock-in session started!', embeds: [], components: [] });
+            } else {
+                await interaction.update({ content: 'maybe next time 🤷‍♂️', embeds: [], components: [] });
+            }
+        } else if (action === 'break') {
+            const takeBreak = response === 'yes';
+            await handleLockInBreak(interaction.channel, userId, takeBreak);
+            await interaction.update({ content: takeBreak ? '☕ Break started!' : 'staying focused! 💪', embeds: [], components: [] });
+        }
+    } catch (error) {
+        console.error('Button interaction error:', error);
+        await interaction.reply({ content: '❌ An error occurred.', flags: MessageFlags.Ephemeral });
+    }
+});
+
+// =============================================================================
 // SLASH COMMAND HANDLER
 // =============================================================================
 client.on('interactionCreate', async interaction => {
     if (!interaction.isChatInputCommand()) return;
 
+    // Permission check
+    if (!allowedSlashCommandUsers.has(interaction.user.id)) {
+        return interaction.reply({ 
+            content: '❌ You are not authorized to use this command.', 
+            flags: MessageFlags.Ephemeral 
+        });
+    }
+
     try {
         if (interaction.commandName === 'mute') {
-            // Permission check
-            if (!allowedSlashCommandUsers.has(interaction.user.id)) {
-                return interaction.reply({ 
-                    content: '❌ You are not authorized to use this command.', 
-                    flags: MessageFlags.Ephemeral 
-                });
-            }
-
             const user = interaction.options.getUser('user');
             const duration = interaction.options.getInteger('duration') || 30;
             const channel = interaction.channel;
@@ -667,102 +692,36 @@ client.on('interactionCreate', async interaction => {
             await sendChallenge(channel, user.id);
 
             // Auto-unmute after duration
-            const timeout = setTimeout(() => {
+            const timeoutId = setTimeout(() => {
                 clearUserState(user.id);
-                channel.send(`<@${user.id}> has been automatically unmuted (time expired).`);
+                channel.send(`<@${user.id}> automatically unmuted after ${duration} seconds.`).catch(console.error);
             }, duration * 1000);
-
-            muteTimeouts.set(user.id, timeout);
-            await interaction.reply({ 
-                content: `✅ Challenge started for <@${user.id}> (Duration: ${duration}s)`, 
-                flags: MessageFlags.Ephemeral 
-            });
+            
+            muteTimeouts.set(user.id, timeoutId);
+            
+            await interaction.reply(`✅ <@${user.id}> has been given a counting challenge and will be auto-unmuted in ${duration}s.`);
 
         } else if (interaction.commandName === 'unmute') {
-            // Permission check
-            if (!allowedSlashCommandUsers.has(interaction.user.id)) {
-                return interaction.reply({ 
-                    content: '❌ You are not authorized to use this command.', 
-                    flags: MessageFlags.Ephemeral 
-                });
-            }
-
             const user = interaction.options.getUser('user');
+            const wasActive = activeChallenges.has(user.id) || mutedUsers.has(user.id);
+            
             clearUserState(user.id);
-            await interaction.reply({ 
-                content: `✅ Challenge cleared for <@${user.id}>`, 
-                flags: MessageFlags.Ephemeral 
-            });
+            
+            if (wasActive) {
+                await interaction.reply(`✅ <@${user.id}> has been released from their challenge.`);
+            } else {
+                await interaction.reply(`ℹ️ <@${user.id}> doesn't have any active challenges.`);
+            }
 
         } else if (interaction.commandName === 'status') {
-            // Permission check
-            if (!allowedSlashCommandUsers.has(interaction.user.id)) {
-                return interaction.reply({ 
-                    content: '❌ You are not authorized to use this command.', 
-                    flags: MessageFlags.Ephemeral 
-                });
-            }
+            const activeChallengeCount = activeChallenges.size;
+            const mutedCount = mutedUsers.size;
+            const freeSpeechCount = freeSpeechTimers.size;
+            const pingPongCount = pingPongGames.size;
+            const lockInCount = lockInSessions.size;
 
             const embed = new EmbedBuilder()
                 .setTitle('🤖 Bot Status')
-                .setColor(0x00ff00)
+                .setColor('#0099ff')
                 .addFields(
-                    { name: 'Active Challenges', value: activeChallenges.size.toString(), inline: true },
-                    { name: 'Muted Users', value: mutedUsers.size.toString(), inline: true },
-                    { name: 'Free Speech Timers', value: freeSpeechTimers.size.toString(), inline: true },
-                    { name: 'Ping-Pong Games', value: pingPongGames.size.toString(), inline: true },
-                    { name: 'Lock-In Sessions', value: lockInSessions.size.toString(), inline: true },
-                    { name: 'Delete Queue', value: deleteQueue.length.toString(), inline: true }
-                )
-                .setTimestamp();
-
-            await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
-
-        } else if (interaction.commandName === 'lock-in') {
-            const action = interaction.options.getString('action');
-            const userId = interaction.user.id;
-            const channel = interaction.channel;
-
-            if (action === 'end') {
-                // End existing session
-                const ended = await endLockInSession(channel, userId);
-                if (ended) {
-                    await interaction.reply({ 
-                        content: '✅ Lock-in session ended!', 
-                        flags: MessageFlags.Ephemeral 
-                    });
-                } else {
-                    await interaction.reply({ 
-                        content: '❌ You don\'t have an active lock-in session.', 
-                        flags: MessageFlags.Ephemeral 
-                    });
-                }
-                return;
-            }
-
-            // Check if user already has an active session
-            if (lockInSessions.has(userId)) {
-                await interaction.reply({ 
-                    content: '❌ You already have an active lock-in session! Use `/lock-in action:End` to end it.', 
-                    flags: MessageFlags.Ephemeral 
-                });
-                return;
-            }
-
-            // Show confirmation prompt
-            const row = new ActionRowBuilder()
-                .addComponents(
-                    new ButtonBuilder()
-                        .setCustomId(`lockin_yes_${userId}`)
-                        .setLabel('yeah')
-                        .setStyle(ButtonStyle.Success),
-                    new ButtonBuilder()
-                        .setCustomId(`lockin_no_${userId}`)
-                        .setLabel('nah')
-                        .setStyle(ButtonStyle.Danger)
-                );
-
-            await interaction.reply({
-                content: 'do u wanna lock in rn',
-                components: [row],
-                flags
+                    { name: '🎯 Active Challenges', value: activeChallen
