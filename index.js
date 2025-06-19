@@ -25,6 +25,7 @@ const FREE_SPEECH_DURATION = 30 * 1000;    // How long free speech lasts (30 sec
 const DELETE_QUEUE_INTERVAL = 100;         // Delay between deletions (prevents rate limits)
 const KEEP_ALIVE_INTERVAL = 60 * 1000;     // Keep-alive ping frequency (60 seconds)
 const COUNTDOWN_INTERVAL = 5000;           // How often countdown updates (5 seconds)
+const TEMP_UNMUTE_DURATION = 15 * 60 * 1000; // Temporary unmute duration (15 minutes)
 
 // Your test channel ID (where keep-alive messages are sent)
 const TEST_CHANNEL_ID = '1382577291015749674';
@@ -71,7 +72,7 @@ const allowedUsers = new Set(
     process.env.ALLOWED_USERS?.split(',').map(id => id.trim()).filter(Boolean) || []
 );
 
-// Users who can use slash commands (/mute, /unmute, /status)
+// Users who can use slash commands (/mute, /unmute, /status, /sleep)
 const allowedSlashCommandUsers = new Set(
     process.env.SLASH_COMMAND_USERS?.split(',').map(id => id.trim()).filter(Boolean) || []
 );
@@ -105,6 +106,8 @@ const muteTimeouts = new Map();         // userId -> timeout for auto-unmute
 const countdownIntervals = new Map();   // userId -> countdown interval
 const mutedUsers = new Set();           // Set of currently muted users
 const pingPongGames = new Map();        // userId -> ping-pong game state
+const sleepMutedUsers = new Set();      // Set of users muted with /sleep command
+const tempUnmuteTimeouts = new Map();   // userId -> timeout for temporary unmute
 
 // =============================================================================
 // UTILITY FUNCTIONS
@@ -133,6 +136,7 @@ function safeDelete(message) {
 function clearUserState(userId) {
     activeChallenges.delete(userId);
     mutedUsers.delete(userId);
+    sleepMutedUsers.delete(userId);
     freeSpeechTimers.delete(userId);
     
     // Clear ping-pong game
@@ -145,6 +149,13 @@ function clearUserState(userId) {
     if (muteTimeout) {
         clearTimeout(muteTimeout);
         muteTimeouts.delete(userId);
+    }
+    
+    // Clear temporary unmute timeout
+    const tempUnmuteTimeout = tempUnmuteTimeouts.get(userId);
+    if (tempUnmuteTimeout) {
+        clearTimeout(tempUnmuteTimeout);
+        tempUnmuteTimeouts.delete(userId);
     }
     
     // Clear countdown interval
@@ -472,8 +483,13 @@ client.once('ready', async () => {
             .addIntegerOption(opt => opt.setName('duration').setDescription('Mute duration in seconds (default: 30)').setRequired(false).setMinValue(10).setMaxValue(3600)),
         new SlashCommandBuilder()
             .setName('unmute')
-            .setDescription('Cancel a user\'s challenge')
-            .addUserOption(opt => opt.setName('user').setDescription('User to release').setRequired(true)),
+            .setDescription('Cancel a user\'s challenge or sleep mute')
+            .addUserOption(opt => opt.setName('user').setDescription('User to release').setRequired(true))
+            .addBooleanOption(opt => opt.setName('temporary').setDescription('Temporary unmute for 15 minutes (default: false)').setRequired(false)),
+        new SlashCommandBuilder()
+            .setName('sleep')
+            .setDescription('Put a user to sleep - complete silence with no way to speak')
+            .addUserOption(opt => opt.setName('user').setDescription('User to put to sleep').setRequired(true)),
         new SlashCommandBuilder()
             .setName('status')
             .setDescription('Show bot status and active challenges')
@@ -525,13 +541,56 @@ client.on('interactionCreate', async interaction => {
                 flags: MessageFlags.Ephemeral 
             });
 
-        } else if (interaction.commandName === 'unmute') {
+        } else if (interaction.commandName === 'sleep') {
             const user = interaction.options.getUser('user');
+            const channel = interaction.channel;
+
+            // Clear any existing state and add to sleep mute
             clearUserState(user.id);
+            sleepMutedUsers.add(user.id);
+
+            await channel.send(`go to sleep <@${user.id}>`);
             await interaction.reply({ 
-                content: `✅ Challenge cleared for <@${user.id}>`, 
+                content: `😴 <@${user.id}> has been put to sleep (permanent mute until manually unmuted)`, 
                 flags: MessageFlags.Ephemeral 
             });
+
+            console.log(`😴 User ${user.id} put to sleep by ${interaction.user.username}`);
+
+        } else if (interaction.commandName === 'unmute') {
+            const user = interaction.options.getUser('user');
+            const temporary = interaction.options.getBoolean('temporary') || false;
+            const channel = interaction.channel;
+
+            if (temporary && sleepMutedUsers.has(user.id)) {
+                // Temporary unmute for sleep-muted users
+                sleepMutedUsers.delete(user.id);
+                
+                // Set timeout to re-apply sleep mute after 15 minutes
+                const timeout = setTimeout(() => {
+                    sleepMutedUsers.add(user.id);
+                    channel.send(`<@${user.id}> temporary unmute expired - go back to sleep`);
+                    console.log(`😴 User ${user.id} temporary unmute expired - back to sleep`);
+                }, TEMP_UNMUTE_DURATION);
+
+                tempUnmuteTimeouts.set(user.id, timeout);
+                
+                await interaction.reply({ 
+                    content: `⏰ <@${user.id}> temporarily unmuted for 15 minutes`, 
+                    flags: MessageFlags.Ephemeral 
+                });
+                
+                console.log(`⏰ User ${user.id} temporarily unmuted for 15 minutes`);
+            } else {
+                // Permanent unmute
+                clearUserState(user.id);
+                await interaction.reply({ 
+                    content: `✅ <@${user.id}> has been completely unmuted`, 
+                    flags: MessageFlags.Ephemeral 
+                });
+                
+                console.log(`✅ User ${user.id} permanently unmuted by ${interaction.user.username}`);
+            }
 
         } else if (interaction.commandName === 'status') {
             const embed = new EmbedBuilder()
@@ -540,9 +599,11 @@ client.on('interactionCreate', async interaction => {
                 .addFields(
                     { name: 'Active Challenges', value: activeChallenges.size.toString(), inline: true },
                     { name: 'Muted Users', value: mutedUsers.size.toString(), inline: true },
+                    { name: 'Sleep Muted Users', value: sleepMutedUsers.size.toString(), inline: true },
                     { name: 'Free Speech Timers', value: freeSpeechTimers.size.toString(), inline: true },
                     { name: 'Ping-Pong Games', value: pingPongGames.size.toString(), inline: true },
-                    { name: 'Delete Queue', value: deleteQueue.length.toString(), inline: true }
+                    { name: 'Delete Queue', value: deleteQueue.length.toString(), inline: true },
+                    { name: 'Temp Unmute Timers', value: tempUnmuteTimeouts.size.toString(), inline: true }
                 )
                 .setTimestamp();
 
@@ -601,7 +662,14 @@ client.on('messageCreate', async (message) => {
         return; // Don't interfere with allowed users
     }
 
-    // STEP 3: Handle non-muted users
+    // STEP 3: Handle sleep-muted users (complete silence)
+    if (sleepMutedUsers.has(userId)) {
+        safeDelete(message);
+        console.log(`😴 Sleep-muted user @${message.author.username} (${userId}) message deleted`);
+        return; // No way to speak at all when sleep-muted
+    }
+
+    // STEP 4: Handle non-muted users
     if (!mutedUsers.has(userId)) {
         // Check ping-pong game
         if (handlePingPongResponse(message, content)) {
@@ -621,7 +689,7 @@ client.on('messageCreate', async (message) => {
         return; // User is not muted, let them speak freely
     }
 
-    // STEP 4: Handle muted users
+    // STEP 5: Handle muted users (regular mute with challenges)
     const challenge = activeChallenges.get(userId);
     const freeSpeechTimer = freeSpeechTimers.get(userId);
 
