@@ -217,58 +217,52 @@ function handlePingPongResponse(message, content) {
     const lower = content.toLowerCase();
     const game = pingPongGames.get(userId);
 
-    // If there's no active game, start one if the user says "ping" or "pong"
+    // If no game, start one with whatever the user said
     if (!game) {
-        if (lower === 'ping') {
-            message.channel.send(`<@${userId}> pong`);
-            startPingPongGame(message.channel, userId, false, 1);
-            pingPongGames.get(userId).expectingResponse = false;
-            return true;
-        } else if (lower === 'pong') {
-            message.channel.send(`<@${userId}> ping`);
-            startPingPongGame(message.channel, userId, false, 1);
-            pingPongGames.get(userId).expectingResponse = true;
+        if (lower === 'ping' || lower === 'pong') {
+            message.channel.send(`<@${userId}> ${lower}`);
+            startPingPongGame(message.channel, userId, lower, 1);
             return true;
         }
         return false;
     }
 
-    // If awaiting the correct response
-    if (game.expectingResponse && lower === 'ping') {
+    // User must respond with the same word the bot sent last time
+    if (lower === game.expectedWord) {
         clearTimeout(game.timeout);
         const newExchanges = game.exchanges + 1;
+
+        // Win condition
         if (newExchanges === PING_PONG_WIN_THRESHOLD) {
             message.channel.send(`<@${userId}> wow you actually won the ping pong game! 🏆 (${newExchanges} exchanges)`);
+            const prev = pingPongLeaderboard.get(userId) || 0;
+            if (newExchanges > prev) {
+                pingPongLeaderboard.set(userId, newExchanges);
+            }
+            pingPongGames.delete(userId);
+            return true;
         }
-        message.channel.send(`<@${userId}> pong`);
-        startPingPongGame(message.channel, userId, false, newExchanges);
-        pingPongGames.get(userId).expectingResponse = false;
+
+        // Continue game with same word
+        message.channel.send(`<@${userId}> ${game.expectedWord}`);
+        startPingPongGame(message.channel, userId, game.expectedWord, newExchanges);
         return true;
     }
-    if (!game.expectingResponse && lower === 'pong') {
-        clearTimeout(game.timeout);
-        const newExchanges = game.exchanges + 1;
-        if (newExchanges === PING_PONG_WIN_THRESHOLD) {
-            message.channel.send(`<@${userId}> wow you actually won the ping pong game! 🏆 (${newExchanges} exchanges)`);
-        }
-        message.channel.send(`<@${userId}> ping`);
-        startPingPongGame(message.channel, userId, false, newExchanges);
-        pingPongGames.get(userId).expectingResponse = true;
-        return true;
-    }
+
+    // Wrong response, do nothing (or optionally send a "wrong word" message)
     return false;
 }
 
-async function startPingPongGame(channel, userId, isInitialPing = true, exchanges = 0) {
+// Update this function:
+async function startPingPongGame(channel, userId, expectedWord = 'ping', exchanges = 0) {
     if (pingPongGames.has(userId)) {
         const existingGame = pingPongGames.get(userId);
         if (existingGame.timeout) clearTimeout(existingGame.timeout);
     }
-    const timeLimit = isInitialPing ? INITIAL_PING_PONG_TIME :
+    const timeLimit = exchanges === 0 ? INITIAL_PING_PONG_TIME :
         Math.max(1000, INITIAL_PING_PONG_TIME * Math.pow(1 - TIME_REDUCTION_RATE, exchanges));
     const timeout = setTimeout(async () => {
         try {
-            // Update leaderboard
             const prev = pingPongLeaderboard.get(userId) || 0;
             if (exchanges > prev) {
                 pingPongLeaderboard.set(userId, exchanges);
@@ -278,54 +272,11 @@ async function startPingPongGame(channel, userId, isInitialPing = true, exchange
         } catch (error) { }
     }, timeLimit);
     pingPongGames.set(userId, {
-        timeLimit,
         exchanges,
         timeout,
-        expectingResponse: isInitialPing
+        expectedWord
     });
 }
-
-async function sendChallenge(channel, userId, intro = true) {
-    try {
-        const count = Math.floor(Math.random() * 21) + 10;
-        const exclamations = generateExclamations(count);
-        if (intro) {
-            await channel.send(`hey <@${userId}> how many`);
-        }
-        await channel.send(`<@${userId}> count${exclamations}`);
-        activeChallenges.set(userId, {
-            state: 'waiting',
-            answer: count,
-            timestamp: Date.now()
-        });
-        mutedUsers.add(userId);
-    } catch (error) { }
-}
-
-async function startFreeSpeechCountdown(channel, userId) {
-    const startTime = Date.now();
-    freeSpeechTimers.set(userId, startTime);
-    const interval = setInterval(async () => {
-        try {
-            const elapsed = Date.now() - startTime;
-            const remaining = Math.ceil((FREE_SPEECH_DURATION - elapsed) / 1000);
-            if (remaining > 0) {
-                const msg = await channel.send(`${remaining}`);
-                setTimeout(() => safeDelete(msg), 3000);
-            } else {
-                await channel.send(`<@${userId}> no more free speech`);
-                freeSpeechTimers.delete(userId);
-                countdownIntervals.delete(userId);
-                clearInterval(interval);
-            }
-        } catch (error) {
-            clearInterval(interval);
-            countdownIntervals.delete(userId);
-        }
-    }, COUNTDOWN_INTERVAL);
-    countdownIntervals.set(userId, interval);
-}
-
 // =============================================================================
 // DELETE QUEUE PROCESSOR
 // =============================================================================
