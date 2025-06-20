@@ -223,12 +223,16 @@ function handlePingPongResponse(message, content) {
             const newExchanges = game.exchanges + 1;
             if (newExchanges === PING_PONG_WIN_THRESHOLD) {
                 message.channel.send(`<@${userId}> wow you actually won the ping pong game! 🏆 (${newExchanges} exchanges)`);
-                // Game continues!
+                // Immediately start next round, but don't send extra "ping"
+                startPingPongGame(message.channel, userId, false, newExchanges);
+                pingPongGames.get(userId).expectingResponse = false;
+                return true;
+            } else {
+                message.channel.send(`<@${userId}> ping`);
+                startPingPongGame(message.channel, userId, false, newExchanges);
+                pingPongGames.get(userId).expectingResponse = false;
+                return true;
             }
-            message.channel.send(`<@${userId}> ping`);
-            startPingPongGame(message.channel, userId, false, newExchanges);
-            pingPongGames.get(userId).expectingResponse = false;
-            return true;
         } else if (!game) {
             message.channel.send(`<@${userId}> pong`);
             startPingPongGame(message.channel, userId, false, 1);
@@ -242,12 +246,15 @@ function handlePingPongResponse(message, content) {
             const newExchanges = game.exchanges + 1;
             if (newExchanges === PING_PONG_WIN_THRESHOLD) {
                 message.channel.send(`<@${userId}> wow you actually won the ping pong game! 🏆 (${newExchanges} exchanges)`);
-                // Game continues!
+                startPingPongGame(message.channel, userId, false, newExchanges);
+                pingPongGames.get(userId).expectingResponse = true;
+                return true;
+            } else {
+                message.channel.send(`<@${userId}> ping`);
+                startPingPongGame(message.channel, userId, false, newExchanges);
+                pingPongGames.get(userId).expectingResponse = true;
+                return true;
             }
-            message.channel.send(`<@${userId}> ping`);
-            startPingPongGame(message.channel, userId, false, newExchanges);
-            pingPongGames.get(userId).expectingResponse = true;
-            return true;
         }
     }
     return false;
