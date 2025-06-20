@@ -13,6 +13,7 @@ dotenv.config();
 
 const TOKEN = process.env.TOKEN || process.env.DISCORD_TOKEN;
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
+const pingPongLeaderboard = new Map(); // userId -> highest exchanges
 
 if (!TOKEN) {
     console.error('❌ TOKEN (or DISCORD_TOKEN) is not set in environment variables');
@@ -220,10 +221,9 @@ function handlePingPongResponse(message, content) {
         if (game && game.expectingResponse) {
             clearTimeout(game.timeout);
             const newExchanges = game.exchanges + 1;
-            if (newExchanges >= PING_PONG_WIN_THRESHOLD) {
+            if (newExchanges === PING_PONG_WIN_THRESHOLD) {
                 message.channel.send(`<@${userId}> wow you actually won the ping pong game! 🏆 (${newExchanges} exchanges)`);
-                pingPongGames.delete(userId);
-                return true;
+                // Game continues!
             }
             message.channel.send(`<@${userId}> ping`);
             startPingPongGame(message.channel, userId, false, newExchanges);
@@ -240,10 +240,9 @@ function handlePingPongResponse(message, content) {
         if (game && !game.expectingResponse) {
             clearTimeout(game.timeout);
             const newExchanges = game.exchanges + 1;
-            if (newExchanges >= PING_PONG_WIN_THRESHOLD) {
+            if (newExchanges === PING_PONG_WIN_THRESHOLD) {
                 message.channel.send(`<@${userId}> wow you actually won the ping pong game! 🏆 (${newExchanges} exchanges)`);
-                pingPongGames.delete(userId);
-                return true;
+                // Game continues!
             }
             message.channel.send(`<@${userId}> ping`);
             startPingPongGame(message.channel, userId, false, newExchanges);
@@ -263,7 +262,12 @@ async function startPingPongGame(channel, userId, isInitialPing = true, exchange
         Math.max(1000, INITIAL_PING_PONG_TIME * Math.pow(1 - TIME_REDUCTION_RATE, exchanges));
     const timeout = setTimeout(async () => {
         try {
-            await channel.send(`<@${userId}> haha you lose (${exchanges} exchanges)`);
+            // Update leaderboard
+            const prev = pingPongLeaderboard.get(userId) || 0;
+            if (exchanges > prev) {
+                pingPongLeaderboard.set(userId, exchanges);
+            }
+            await channel.send(`ggwp <@${userId}>, you had ${exchanges} exchanges`);
             pingPongGames.delete(userId);
         } catch (error) { }
     }, timeLimit);
@@ -362,6 +366,9 @@ client.once('ready', async () => {
         new SlashCommandBuilder()
             .setName('status')
             .setDescription('Show bot status and active challenges')
+        new SlashCommandBuilder()
+            .setName('pingpongleaderboard')
+            .setDescription('Show the top 10 longest ping pong streaks'),
     ].map(cmd => cmd.toJSON());
 
     const rest = new REST({ version: '10' }).setToken(TOKEN);
@@ -456,6 +463,29 @@ client.on('interactionCreate', async interaction => {
                 )
                 .setTimestamp();
             await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
+        } else if (interaction.commandName === 'pingpongleaderboard') {
+            // Sort and get top 10
+            const top = [...pingPongLeaderboard.entries()]
+                .sort((a, b) => b[1] - a[1])
+                .slice(0, 10);
+            if (top.length === 0) {
+                await interaction.reply('No ping pong games played yet!');
+            } else {
+                const leaderboard = await Promise.all(top.map(async ([userId, score], idx) => {
+                    let username;
+                    try {
+                        const user = await client.users.fetch(userId);
+                        username = user.username;
+                    } catch {
+                        username = `Unknown (${userId})`;
+                    }
+                    return `${idx + 1}. ${username}: ${score}`;
+                }));
+                await interaction.reply({
+                    content: `🏓 **Ping Pong Leaderboard** 🏓\n${leaderboard.join('\n')}`,
+                    flags: MessageFlags.Ephemeral
+                });
+            }
         }
     } catch (error) {
         if (!interaction.replied && !interaction.deferred) {
