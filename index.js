@@ -13,7 +13,7 @@ import express from 'express';
 import dotenv from 'dotenv';
 import { Client, GatewayIntentBits, Partials, REST, Routes, SlashCommandBuilder, EmbedBuilder, MessageFlags } from 'discord.js';
 import axios from 'axios';
-import chrono from 'chrono-node'; // <-- Added chrono-node
+import * as chrono from 'chrono-node';
 
 dotenv.config();
 
