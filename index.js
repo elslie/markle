@@ -241,8 +241,9 @@ function handlePingPongResponse(message, content) {
     if (lower === game.expectedWord) {
         clearTimeout(game.timeout);
         const newExchanges = game.exchanges + 1;
+        const nextWord = game.expectedWord === 'ping' ? 'pong' : 'ping';
 
-        // Win condition: Announce win at every threshold, but keep going!
+        // Only send the "win" message at threshold, and always send the next word once
         if (newExchanges % PING_PONG_WIN_THRESHOLD === 0) {
             message.channel.send(`<@${userId}> wow you actually won the ping pong game! 🏆 (${newExchanges} exchanges)`);
             // Update leaderboard
@@ -250,11 +251,9 @@ function handlePingPongResponse(message, content) {
             if (newExchanges > prev) {
                 pingPongLeaderboard.set(userId, newExchanges);
             }
-            // Game continues!
         }
 
-        // Alternate expected word
-        const nextWord = game.expectedWord === 'ping' ? 'pong' : 'ping';
+        // Always send the next word
         message.channel.send(`<@${userId}> ${nextWord}`);
         startPingPongGame(message.channel, userId, nextWord, newExchanges);
         return true;
