@@ -216,6 +216,10 @@ function checkWordResponses(content) {
 // PING PONG GAME FUNCTIONS (ALTERNATING VERSION)
 // =============================================================================
 
+// =============================================================================
+// PING PONG GAME FUNCTIONS (ALTERNATING, ENDLESS MODE)
+// =============================================================================
+
 function handlePingPongResponse(message, content) {
     const userId = message.author.id;
     const lower = content.toLowerCase();
@@ -238,15 +242,15 @@ function handlePingPongResponse(message, content) {
         clearTimeout(game.timeout);
         const newExchanges = game.exchanges + 1;
 
-        // Win condition
-        if (newExchanges === PING_PONG_WIN_THRESHOLD) {
+        // Win condition: Announce win at every threshold, but keep going!
+        if (newExchanges % PING_PONG_WIN_THRESHOLD === 0) {
             message.channel.send(`<@${userId}> wow you actually won the ping pong game! 🏆 (${newExchanges} exchanges)`);
+            // Update leaderboard
             const prev = pingPongLeaderboard.get(userId) || 0;
             if (newExchanges > prev) {
                 pingPongLeaderboard.set(userId, newExchanges);
             }
-            pingPongGames.delete(userId);
-            return true;
+            // Game continues!
         }
 
         // Alternate expected word
