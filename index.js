@@ -497,18 +497,13 @@ client.on('interactionCreate', async interaction => {
                     }
                     return `${idx + 1}. ${username}: ${score}`;
                 }));
+                // IMPORTANT: Do NOT use flags: MessageFlags.Ephemeral
                 await interaction.reply({
-                    content: `🏓 **Ping Pong Leaderboard** 🏓\n${leaderboard.join('\n')}`,
-                    flags: MessageFlags.Ephemeral
+                    content: `🏓 **Ping Pong Leaderboard** 🏓\n${leaderboard.join('\n')}`
+                    // No ephemeral flag here!
                 });
             }
         }
-    } catch (error) {
-        if (!interaction.replied && !interaction.deferred) {
-            await interaction.reply({ content: '❌ An error occurred while processing the command.', flags: MessageFlags.Ephemeral });
-        }
-    }
-});
 
 
 // =============================================================================
