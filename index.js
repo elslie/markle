@@ -217,45 +217,44 @@ function handlePingPongResponse(message, content) {
     const lower = content.toLowerCase();
     const game = pingPongGames.get(userId);
 
-    if (lower === 'ping') {
-        if (game && game.expectingResponse) {
-            clearTimeout(game.timeout);
-            const newExchanges = game.exchanges + 1;
-            if (newExchanges === PING_PONG_WIN_THRESHOLD) {
-                message.channel.send(`<@${userId}> wow you actually won the ping pong game! 🏆 (${newExchanges} exchanges)`);
-                // Immediately start next round, but don't send extra "ping"
-                startPingPongGame(message.channel, userId, false, newExchanges);
-                pingPongGames.get(userId).expectingResponse = false;
-                return true;
-            } else {
-                message.channel.send(`<@${userId}> ping`);
-                startPingPongGame(message.channel, userId, false, newExchanges);
-                pingPongGames.get(userId).expectingResponse = false;
-                return true;
-            }
-        } else if (!game) {
+    // If there's no active game, start one if the user says "ping" or "pong"
+    if (!game) {
+        if (lower === 'ping') {
             message.channel.send(`<@${userId}> pong`);
             startPingPongGame(message.channel, userId, false, 1);
             pingPongGames.get(userId).expectingResponse = false;
             return true;
+        } else if (lower === 'pong') {
+            message.channel.send(`<@${userId}> ping`);
+            startPingPongGame(message.channel, userId, false, 1);
+            pingPongGames.get(userId).expectingResponse = true;
+            return true;
         }
+        return false;
     }
-    if (lower === 'pong') {
-        if (game && !game.expectingResponse) {
-            clearTimeout(game.timeout);
-            const newExchanges = game.exchanges + 1;
-            if (newExchanges === PING_PONG_WIN_THRESHOLD) {
-                message.channel.send(`<@${userId}> wow you actually won the ping pong game! 🏆 (${newExchanges} exchanges)`);
-                startPingPongGame(message.channel, userId, false, newExchanges);
-                pingPongGames.get(userId).expectingResponse = true;
-                return true;
-            } else {
-                message.channel.send(`<@${userId}> ping`);
-                startPingPongGame(message.channel, userId, false, newExchanges);
-                pingPongGames.get(userId).expectingResponse = true;
-                return true;
-            }
+
+    // If awaiting the correct response
+    if (game.expectingResponse && lower === 'ping') {
+        clearTimeout(game.timeout);
+        const newExchanges = game.exchanges + 1;
+        if (newExchanges === PING_PONG_WIN_THRESHOLD) {
+            message.channel.send(`<@${userId}> wow you actually won the ping pong game! 🏆 (${newExchanges} exchanges)`);
         }
+        message.channel.send(`<@${userId}> pong`);
+        startPingPongGame(message.channel, userId, false, newExchanges);
+        pingPongGames.get(userId).expectingResponse = false;
+        return true;
+    }
+    if (!game.expectingResponse && lower === 'pong') {
+        clearTimeout(game.timeout);
+        const newExchanges = game.exchanges + 1;
+        if (newExchanges === PING_PONG_WIN_THRESHOLD) {
+            message.channel.send(`<@${userId}> wow you actually won the ping pong game! 🏆 (${newExchanges} exchanges)`);
+        }
+        message.channel.send(`<@${userId}> ping`);
+        startPingPongGame(message.channel, userId, false, newExchanges);
+        pingPongGames.get(userId).expectingResponse = true;
+        return true;
     }
     return false;
 }
@@ -482,7 +481,7 @@ client.on('interactionCreate', async interaction => {
                     let username;
                     try {
                         const user = await client.users.fetch(userId);
-                        username = user.username;
+                        username = user.tag; // use user.tag for full Discord tag
                     } catch {
                         username = `Unknown (${userId})`;
                     }
