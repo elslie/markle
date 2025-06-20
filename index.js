@@ -212,22 +212,28 @@ function checkWordResponses(content) {
     return null;
 }
 
+// =============================================================================
+// PING PONG GAME FUNCTIONS (ALTERNATING VERSION)
+// =============================================================================
+
 function handlePingPongResponse(message, content) {
     const userId = message.author.id;
     const lower = content.toLowerCase();
     const game = pingPongGames.get(userId);
 
-    // If no game, start one with whatever the user said
+    // If no game, start one: user can start with "ping" or "pong"
     if (!game) {
         if (lower === 'ping' || lower === 'pong') {
-            message.channel.send(`<@${userId}> ${lower}`);
-            startPingPongGame(message.channel, userId, lower, 1);
+            // Bot replies with the opposite to start alternation
+            const botWord = lower === 'ping' ? 'pong' : 'ping';
+            message.channel.send(`<@${userId}> ${botWord}`);
+            startPingPongGame(message.channel, userId, botWord, 1);
             return true;
         }
         return false;
     }
 
-    // User must respond with the same word the bot sent last time
+    // User must respond with the expected word
     if (lower === game.expectedWord) {
         clearTimeout(game.timeout);
         const newExchanges = game.exchanges + 1;
@@ -243,17 +249,17 @@ function handlePingPongResponse(message, content) {
             return true;
         }
 
-        // Continue game with same word
-        message.channel.send(`<@${userId}> ${game.expectedWord}`);
-        startPingPongGame(message.channel, userId, game.expectedWord, newExchanges);
+        // Alternate expected word
+        const nextWord = game.expectedWord === 'ping' ? 'pong' : 'ping';
+        message.channel.send(`<@${userId}> ${nextWord}`);
+        startPingPongGame(message.channel, userId, nextWord, newExchanges);
         return true;
     }
 
-    // Wrong response, do nothing (or optionally send a "wrong word" message)
+    // Wrong response, ignore
     return false;
 }
 
-// Update this function:
 async function startPingPongGame(channel, userId, expectedWord = 'ping', exchanges = 0) {
     if (pingPongGames.has(userId)) {
         const existingGame = pingPongGames.get(userId);
@@ -277,6 +283,52 @@ async function startPingPongGame(channel, userId, expectedWord = 'ping', exchang
         expectedWord
     });
 }
+
+// =============================================================================
+// OTHER GAME AND MODERATION FUNCTIONS
+// =============================================================================
+
+async function sendChallenge(channel, userId, intro = true) {
+    try {
+        const count = Math.floor(Math.random() * 21) + 10;
+        const exclamations = generateExclamations(count);
+        if (intro) {
+            await channel.send(`hey <@${userId}> how many`);
+        }
+        await channel.send(`<@${userId}> count${exclamations}`);
+        activeChallenges.set(userId, {
+            state: 'waiting',
+            answer: count,
+            timestamp: Date.now()
+        });
+        mutedUsers.add(userId);
+    } catch (error) { }
+}
+
+async function startFreeSpeechCountdown(channel, userId) {
+    const startTime = Date.now();
+    freeSpeechTimers.set(userId, startTime);
+    const interval = setInterval(async () => {
+        try {
+            const elapsed = Date.now() - startTime;
+            const remaining = Math.ceil((FREE_SPEECH_DURATION - elapsed) / 1000);
+            if (remaining > 0) {
+                const msg = await channel.send(`${remaining}`);
+                setTimeout(() => safeDelete(msg), 3000);
+            } else {
+                await channel.send(`<@${userId}> no more free speech`);
+                freeSpeechTimers.delete(userId);
+                countdownIntervals.delete(userId);
+                clearInterval(interval);
+            }
+        } catch (error) {
+            clearInterval(interval);
+            countdownIntervals.delete(userId);
+        }
+    }, COUNTDOWN_INTERVAL);
+    countdownIntervals.set(userId, interval);
+}
+
 // =============================================================================
 // DELETE QUEUE PROCESSOR
 // =============================================================================
@@ -345,15 +397,18 @@ client.once('ready', async () => {
 client.on('interactionCreate', async interaction => {
     if (!interaction.isChatInputCommand()) return;
 
-    // Permission check
-    if (!allowedSlashCommandUsers.has(interaction.user.id)) {
-        return interaction.reply({
-            content: '❌ You are not authorized to use this command.',
-            flags: MessageFlags.Ephemeral
-        });
-    }
-
     try {
+        // Only restrict permissions for these commands:
+        if (
+            ['mute', 'unmute', 'sleep'].includes(interaction.commandName) &&
+            !allowedSlashCommandUsers.has(interaction.user.id)
+        ) {
+            return interaction.reply({
+                content: '❌ You are not authorized to use this command.',
+                flags: MessageFlags.Ephemeral
+            });
+        }
+
         if (interaction.commandName === 'mute') {
             const user = interaction.options.getUser('user');
             const duration = interaction.options.getInteger('duration') || 30;
@@ -432,7 +487,7 @@ client.on('interactionCreate', async interaction => {
                     let username;
                     try {
                         const user = await client.users.fetch(userId);
-                        username = user.tag; // use user.tag for full Discord tag
+                        username = user.tag; // full Discord tag
                     } catch {
                         username = `Unknown (${userId})`;
                     }
