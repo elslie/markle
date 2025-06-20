@@ -402,7 +402,7 @@ client.on('interactionCreate', async interaction => {
     if (!interaction.isChatInputCommand()) return;
 
     try {
-        // Only restrict permissions for these commands:
+        // Restrict only certain commands
         if (
             ['mute', 'unmute', 'sleep'].includes(interaction.commandName) &&
             !allowedSlashCommandUsers.has(interaction.user.id)
@@ -478,6 +478,7 @@ client.on('interactionCreate', async interaction => {
                     { name: 'Temp Unmute Timers', value: tempUnmuteTimeouts.size.toString(), inline: true }
                 )
                 .setTimestamp();
+            // This response is ephemeral (visible only to user). Remove "flags" if you want it public!
             await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
         } else if (interaction.commandName === 'pingpongleaderboard') {
             // Sort and get top 10
@@ -497,13 +498,18 @@ client.on('interactionCreate', async interaction => {
                     }
                     return `${idx + 1}. ${username}: ${score}`;
                 }));
-                // IMPORTANT: Do NOT use flags: MessageFlags.Ephemeral
+                // This reply is public (everyone sees it!)
                 await interaction.reply({
                     content: `🏓 **Ping Pong Leaderboard** 🏓\n${leaderboard.join('\n')}`
-                    // No ephemeral flag here!
                 });
             }
         }
+    } catch (error) {
+        if (!interaction.replied && !interaction.deferred) {
+            await interaction.reply({ content: '❌ An error occurred while processing the command.', flags: MessageFlags.Ephemeral });
+        }
+    }
+});
 
 
 // =============================================================================
