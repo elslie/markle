@@ -1,3 +1,8 @@
+//nts: copilot prompt
+//you know that discord has these special commands <t:1750440945:F> like that to make the time accurate for everyone despite time zones, 
+//can you make it so that when anyone says a time, like 9pm or like 9 pm, 
+//markle will say a message in this format <t:1750440945:F> to make it accurate and clear for everyone
+
 // =============================================================================
 // DISCORD MODERATION BOT + GROQ AI INTEGRATION - MAIN CONFIGURATION
 // =============================================================================
