@@ -225,12 +225,12 @@ function handlePingPongResponse(message, content) {
                 pingPongGames.delete(userId);
                 return true;
             }
-            message.channel.send('<@${userId}> ping');
+            message.channel.send(`<@${userId}> ping`);
             startPingPongGame(message.channel, userId, false, newExchanges);
             pingPongGames.get(userId).expectingResponse = false;
             return true;
         } else if (!game) {
-            message.channel.send('<@${userId}> pong');
+            message.channel.send(`<@${userId}> pong`);
             startPingPongGame(message.channel, userId, false, 1);
             pingPongGames.get(userId).expectingResponse = false;
             return true;
@@ -245,7 +245,7 @@ function handlePingPongResponse(message, content) {
                 pingPongGames.delete(userId);
                 return true;
             }
-            message.channel.send('<@${userId}> ping');
+            message.channel.send(`<@${userId}> ping`);
             startPingPongGame(message.channel, userId, false, newExchanges);
             pingPongGames.get(userId).expectingResponse = true;
             return true;
