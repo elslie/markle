@@ -642,9 +642,6 @@ client.on('messageCreate', async (message) => {
     const userId = message.author.id;
     const content = message.content.trim();
 
-    import * as chrono from 'chrono-node';
-    import { DateTime } from 'luxon';
-    
     // ...inside client.on('messageCreate', async (message) => {
     const userId = message.author.id;
     const content = message.content.trim();
