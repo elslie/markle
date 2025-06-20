@@ -498,7 +498,8 @@ client.on('interactionCreate', async interaction => {
                     return `${idx + 1}. ${username}: ${score}`;
                 }));
                 // This reply is public (everyone sees it!)
-                await interaction.reply({
+                await interaction.deferReply();
+                await interaction.editReply({
                     content: `🏓 **Ping Pong Leaderboard** 🏓\n${leaderboard.join('\n')}`
                 });
             }
