@@ -375,6 +375,13 @@ client.once('ready', async () => {
         new SlashCommandBuilder()
             .setName('pingpongleaderboard')
             .setDescription('Show the top 10 longest ping pong streaks'),
+        new SlashCommandBuilder()
+            .setName('timezone')
+            .setDescription('Set your timezone for accurate time conversion (e.g., America/New_York)')
+            .addStringOption(opt =>
+            opt.setName('zone')
+                .setDescription('Your IANA timezone, e.g., America/New_York or Europe/Berlin')
+                .setRequired(true)),
     ].map(cmd => cmd.toJSON());
 
     const rest = new REST({ version: '10' }).setToken(TOKEN);
@@ -491,6 +498,20 @@ client.on('interactionCreate', async interaction => {
                 await interaction.editReply({
                     content: `🏓 **Ping Pong Leaderboard** 🏓\n${leaderboard.join('\n')}`
                 });
+            }
+        }
+        else if (interaction.commandName === 'timezone') {
+            const zone = interaction.options.getString('zone');
+            // Validate with luxon
+            try {
+                const { DateTime } = await import('luxon');
+                if (!DateTime.local().setZone(zone).isValid) {
+                    return interaction.reply({ content: "❌ Invalid timezone. Please use a valid IANA timezone like America/New_York.", ephemeral: true });
+                }
+                userTimezones.set(interaction.user.id, zone);
+                await interaction.reply({ content: `✅ Your timezone has been set to **${zone}**!`, ephemeral: true });
+            } catch (err) {
+                await interaction.reply({ content: "❌ Error setting timezone.", ephemeral: true });
             }
         }
     } catch (error) {
@@ -621,6 +642,46 @@ client.on('messageCreate', async (message) => {
     const userId = message.author.id;
     const content = message.content.trim();
 
+    import * as chrono from 'chrono-node';
+    import { DateTime } from 'luxon';
+    
+    // ...inside client.on('messageCreate', async (message) => {
+    const userId = message.author.id;
+    const content = message.content.trim();
+    
+    // Get user's timezone or default to UTC
+    const zone = userTimezones.get(userId) || 'UTC';
+    
+    // Parse times in the user's message
+    const timeResults = chrono.parse(content, new Date(), { forwardDate: true });
+    
+    if (timeResults.length > 0) {
+        // We assume the user intends "9pm" in THEIR local time, not the server's
+        const original = timeResults[0].start;
+        // Build a DateTime in user's local zone
+        let userTime = DateTime.fromObject({
+            year: original.get('year'),
+            month: original.get('month'),
+            day: original.get('day'),
+            hour: original.get('hour'),
+            minute: original.get('minute') || 0,
+            second: original.get('second') || 0,
+        }, { zone });
+    
+        // If the result is invalid, fall back to .fromJSDate
+        if (!userTime.isValid) {
+            userTime = DateTime.fromJSDate(original.date()).setZone(zone, { keepLocalTime: true });
+        }
+    
+        const unixTimestamp = Math.floor(userTime.toSeconds());
+        const discordTimestamp = `<t:${unixTimestamp}:F>`;
+    
+        try {
+            await message.reply(`You mentioned a time: ${discordTimestamp}`);
+        } catch (e) {
+            // Optionally log or ignore
+        }
+    }
     // ====== DISCORD TIMESTAMP FEATURE (START) ======
     const timeResults = chrono.parse(content, new Date(), { forwardDate: true });
     if (timeResults.length > 0) {
