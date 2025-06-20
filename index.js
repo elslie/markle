@@ -13,6 +13,7 @@ import express from 'express';
 import dotenv from 'dotenv';
 import { Client, GatewayIntentBits, Partials, REST, Routes, SlashCommandBuilder, EmbedBuilder, MessageFlags } from 'discord.js';
 import axios from 'axios';
+import chrono from 'chrono-node'; // <-- Added chrono-node
 
 dotenv.config();
 
@@ -59,7 +60,6 @@ const client = new Client({
 // BOT CONFIGURATION AND VARIABLES
 // =============================================================================
 
-// Moderation config and state
 const bannedWords = ['yao', 'fag', 'retard', 'cunt', 'bashno', 'aoi'];
 const FREE_SPEECH_DURATION = 30 * 1000;
 const DELETE_QUEUE_INTERVAL = 100;
@@ -109,7 +109,6 @@ const pingPongGames = new Map();
 const sleepMutedUsers = new Set();
 const tempUnmuteTimeouts = new Map();
 
-// AI section
 const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
 const userCooldowns = new Map();
 const COOLDOWN_TIME = 5000;
@@ -221,10 +220,6 @@ function checkWordResponses(content) {
 // PING PONG GAME FUNCTIONS (ALTERNATING VERSION)
 // =============================================================================
 
-// =============================================================================
-// PING PONG GAME FUNCTIONS (ALTERNATING, ENDLESS MODE)
-// =============================================================================
-
 function handlePingPongResponse(message, content) {
     const userId = message.author.id;
     const lower = content.toLowerCase();
@@ -233,7 +228,6 @@ function handlePingPongResponse(message, content) {
     // If no game, start one: user can start with "ping" or "pong"
     if (!game) {
         if (lower === 'ping' || lower === 'pong') {
-            // Bot replies with the opposite to start alternation
             const botWord = lower === 'ping' ? 'pong' : 'ping';
             message.channel.send(`<@${userId}> ${botWord}`);
             startPingPongGame(message.channel, userId, botWord, 1);
@@ -248,23 +242,19 @@ function handlePingPongResponse(message, content) {
         const newExchanges = game.exchanges + 1;
         const nextWord = game.expectedWord === 'ping' ? 'pong' : 'ping';
 
-        // Only send the "win" message at threshold, and always send the next word once
         if (newExchanges % PING_PONG_WIN_THRESHOLD === 0) {
             message.channel.send(`<@${userId}> wow you actually won the ping pong game! 🏆 (${newExchanges} exchanges)`);
-            // Update leaderboard
             const prev = pingPongLeaderboard.get(userId) || 0;
             if (newExchanges > prev) {
                 pingPongLeaderboard.set(userId, newExchanges);
             }
         }
 
-        // Always send the next word
         message.channel.send(`<@${userId}> ${nextWord}`);
         startPingPongGame(message.channel, userId, nextWord, newExchanges);
         return true;
     }
 
-    // Wrong response, ignore
     return false;
 }
 
@@ -364,7 +354,6 @@ client.once('ready', async () => {
         } catch (error) { }
     }, KEEP_ALIVE_INTERVAL);
 
-    // Register slash commands
     const commands = [
         new SlashCommandBuilder()
             .setName('mute')
@@ -402,14 +391,10 @@ client.once('ready', async () => {
 // =============================================================================
 // SLASH COMMAND HANDLER
 // =============================================================================
-// =============================================================================
-// SLASH COMMAND HANDLER
-// =============================================================================
 client.on('interactionCreate', async interaction => {
     if (!interaction.isChatInputCommand()) return;
 
     try {
-        // Restrict only certain commands
         if (
             ['mute', 'unmute', 'sleep'].includes(interaction.commandName) &&
             !allowedSlashCommandUsers.has(interaction.user.id)
@@ -428,7 +413,6 @@ client.on('interactionCreate', async interaction => {
             clearUserState(user.id);
             await sendChallenge(channel, user.id);
 
-            // Auto-unmute after duration
             const timeout = setTimeout(() => {
                 clearUserState(user.id);
                 channel.send(`<@${user.id}> has been automatically unmuted (time expired).`);
@@ -485,10 +469,8 @@ client.on('interactionCreate', async interaction => {
                     { name: 'Temp Unmute Timers', value: tempUnmuteTimeouts.size.toString(), inline: true }
                 )
                 .setTimestamp();
-            // This response is ephemeral (visible only to user). Remove "flags" if you want it public!
             await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
         } else if (interaction.commandName === 'pingpongleaderboard') {
-            // Sort and get top 10
             const top = [...pingPongLeaderboard.entries()]
                 .sort((a, b) => b[1] - a[1])
                 .slice(0, 10);
@@ -499,13 +481,12 @@ client.on('interactionCreate', async interaction => {
                     let username;
                     try {
                         const user = await client.users.fetch(userId);
-                        username = user.tag; // full Discord tag
+                        username = user.tag;
                     } catch {
                         username = `Unknown (${userId})`;
                     }
                     return `${idx + 1}. ${username}: ${score}`;
                 }));
-                // This reply is public (everyone sees it!)
                 await interaction.deferReply();
                 await interaction.editReply({
                     content: `🏓 **Ping Pong Leaderboard** 🏓\n${leaderboard.join('\n')}`
@@ -518,7 +499,6 @@ client.on('interactionCreate', async interaction => {
         }
     }
 });
-
 
 // =============================================================================
 // AI INTEGRATION FUNCTIONS
@@ -641,7 +621,18 @@ client.on('messageCreate', async (message) => {
     const userId = message.author.id;
     const content = message.content.trim();
 
-    // Moderation logic
+    // ====== DISCORD TIMESTAMP FEATURE (START) ======
+    const timeResults = chrono.parse(content, new Date(), { forwardDate: true });
+    if (timeResults.length > 0) {
+        const parsedDate = timeResults[0].start.date();
+        const unixTimestamp = Math.floor(parsedDate.getTime() / 1000);
+        const discordTimestamp = `<t:${unixTimestamp}:F>`;
+        try {
+            await message.reply(`You mentioned a time: ${discordTimestamp}`);
+        } catch (e) {}
+    }
+    // ====== DISCORD TIMESTAMP FEATURE (END) ======
+
     if (containsBannedWord(content)) {
         safeDelete(message);
         try { await message.channel.send(`<@${userId}> nuh uh no no word`); } catch (error) { }
@@ -665,7 +656,6 @@ client.on('messageCreate', async (message) => {
         if (response) {
             try { await message.channel.send(response); } catch (error) { }
         }
-        // Only AI respond if bot is mentioned
         if (message.mentions.has(client.user)) {
             if (isOnCooldown(userId)) {
                 message.reply(`⏰ Please wait a few seconds before asking another question.`);
@@ -690,7 +680,6 @@ client.on('messageCreate', async (message) => {
                 await message.reply('❌ Sorry, I encountered an error while processing your request.');
             }
         }
-        // Add message to AI training
         if (message.author.id !== client.user.id && message.guild) {
             if (!message.mentions.has(client.user) && message.content.length > 3) {
                 addServerMessage(
@@ -703,7 +692,6 @@ client.on('messageCreate', async (message) => {
         return;
     }
 
-    // Muted user logic
     const challenge = activeChallenges.get(userId);
     const freeSpeechTimer = freeSpeechTimers.get(userId);
     if (freeSpeechTimer) return;
