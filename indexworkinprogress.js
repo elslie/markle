@@ -365,7 +365,7 @@ client.once('ready', async () => {
             .addUserOption(opt => opt.setName('user').setDescription('User to put to sleep').setRequired(true)),
         new SlashCommandBuilder()
             .setName('status')
-            .setDescription('Show bot status and active challenges')
+            .setDescription('Show bot status and active challenges'),
         new SlashCommandBuilder()
             .setName('pingpongleaderboard')
             .setDescription('Show the top 10 longest ping pong streaks'),
