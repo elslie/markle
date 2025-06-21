@@ -574,13 +574,13 @@ client.on('interactionCreate', async interaction => {
             try {
                 const { DateTime } = await import('luxon');
                 if (!DateTime.local().setZone(zone).isValid) {
-                    return interaction.reply({ content: "❌ Invalid timezone. Please use a valid IANA timezone like America/New_York.", ephemeral: true });
+                    return interaction.reply({ content: "❌ Invalid timezone. Please use a valid IANA timezone like America/New_York.", flags: MessageFlags.Ephemeral });
                 }
                 userTimezones.set(interaction.user.id, zone);
                 saveTimezones();
-                await interaction.reply({ content: `✅ Your timezone has been set to **${zone}**!`, ephemeral: true });
+                await interaction.reply({ content: `✅ Your timezone has been set to **${zone}**!`, flags: MessageFlags.Ephemeral });
             } catch (err) {
-                await interaction.reply({ content: "❌ Error setting timezone.", ephemeral: true });
+                await interaction.reply({ content: "❌ Error setting timezone.", flags: MessageFlags.Ephemeral });
             }
         }
     } catch (error) {
