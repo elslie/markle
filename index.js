@@ -643,19 +643,21 @@ function setCooldown(userId) {
 // MAIN MESSAGE PROCESSING LOGIC
 // =============================================================================
 client.on('messageCreate', async (message) => {
-    // Ignore bot messages and DMs for moderation
     if (message.author.bot || !message.guild) return;
 
     const userId = message.author.id;
-
     const content = message.content.trim();
-    
-    // Get user's timezone or default to UTC
     const zone = userTimezones.get(userId) || 'UTC';
-    
-    // Only trigger on explicit clock-like times (not "morning", "now", etc.)
+
+    // --- 1. Handle banned words ---
+    if (containsBannedWord(content)) {
+        safeDelete(message);
+        try { await message.channel.send(`<@${userId}> nuh uh no no word`); } catch (error) { }
+        return;
+    }
+
+    // --- 2. Handle time mentions (DISCORD TIMESTAMP) ---
     const timeResults = chrono.parse(content, new Date(), { forwardDate: true });
-    
     const explicitTimeRegex = /\b((1[0-2]|0?[1-9]):([0-5][0-9])\s?(am|pm)|([01]?[0-9]|2[0-3])(:[0-5][0-9])?\s?(am|pm)?|(noon|midnight))\b/i;
     const timeMatches = [];
     if (explicitTimeRegex.test(content) && timeResults.length > 0) {
@@ -669,11 +671,11 @@ client.on('messageCreate', async (message) => {
                 minute: original.get('minute') || 0,
                 second: original.get('second') || 0,
             }, { zone });
-    
+
             if (!userTime.isValid) {
                 userTime = DateTime.fromJSDate(original.date()).setZone(zone, { keepLocalTime: true });
             }
-    
+
             const unixTimestamp = Math.floor(userTime.toSeconds());
             timeMatches.push(`<t:${unixTimestamp}:F>`);
         }
@@ -681,35 +683,37 @@ client.on('messageCreate', async (message) => {
             try {
                 await message.reply(`You mentioned a time: ${timeMatches.join(', ')}`);
             } catch (e) {}
+            return;
         }
     }
 
-    if (containsBannedWord(content)) {
-        safeDelete(message);
-        try { await message.channel.send(`<@${userId}> nuh uh no no word`); } catch (error) { }
-        return;
-    }
+    // --- 3. Handle allowed users (ping pong, keywords) ---
     if (allowedUsers.has(userId)) {
         if (handlePingPongResponse(message, content)) return;
         const response = checkWordResponses(content);
         if (response) {
             try { await message.channel.send(response); } catch (error) { }
+            return;
         }
-        return;
     }
+
+    // --- 4. Handle sleep muted users ---
     if (sleepMutedUsers.has(userId)) {
         safeDelete(message);
         return;
     }
+
+    // --- 5. Handle regular users not muted ---
     if (!mutedUsers.has(userId)) {
         if (handlePingPongResponse(message, content)) return;
         const response = checkWordResponses(content);
         if (response) {
             try { await message.channel.send(response); } catch (error) { }
+            return;
         }
         if (message.mentions.has(client.user)) {
             if (isOnCooldown(userId)) {
-                message.reply(`⏰ Please wait a few seconds before asking another question.`);
+                await message.reply(`⏰ Please wait a few seconds before asking another question.`);
                 return;
             }
             setCooldown(userId);
@@ -730,6 +734,7 @@ client.on('messageCreate', async (message) => {
             } catch (error) {
                 await message.reply('❌ Sorry, I encountered an error while processing your request.');
             }
+            return;
         }
         if (message.author.id !== client.user.id && message.guild) {
             if (!message.mentions.has(client.user) && message.content.length > 3) {
@@ -743,6 +748,7 @@ client.on('messageCreate', async (message) => {
         return;
     }
 
+    // --- 6. Handle muted users with challenges ---
     const challenge = activeChallenges.get(userId);
     const freeSpeechTimer = freeSpeechTimers.get(userId);
     if (freeSpeechTimer) return;
