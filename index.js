@@ -653,12 +653,10 @@ client.on('messageCreate', async (message) => {
     // Get user's timezone or default to UTC
     const zone = userTimezones.get(userId) || 'UTC';
     
-    // Parse times in the user's message
+    // Only trigger on explicit clock-like times (not "morning", "now", etc.)
     const timeResults = chrono.parse(content, new Date(), { forwardDate: true });
     
-    // Only trigger on explicit clock-like times (not "morning", "now", etc.)
     const explicitTimeRegex = /\b((1[0-2]|0?[1-9]):([0-5][0-9])\s?(am|pm)|([01]?[0-9]|2[0-3])(:[0-5][0-9])?\s?(am|pm)?|(noon|midnight))\b/i;
-    const timeResults = chrono.parse(content, new Date(), { forwardDate: true });
     const timeMatches = [];
     if (explicitTimeRegex.test(content) && timeResults.length > 0) {
         for (const result of timeResults) {
