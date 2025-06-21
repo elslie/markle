@@ -675,7 +675,6 @@ client.on('messageCreate', async (message) => {
         }
     }
     // ====== DISCORD TIMESTAMP FEATURE (START) ======
-    const timeResults = chrono.parse(content, new Date(), { forwardDate: true });
     if (timeResults.length > 0) {
         const parsedDate = timeResults[0].start.date();
         const unixTimestamp = Math.floor(parsedDate.getTime() / 1000);
