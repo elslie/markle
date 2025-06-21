@@ -86,7 +86,7 @@ const multiWordResponses = new Map([
     [['markle', 'shut up'], 'fuck you'],
     [['markle', 'fuck you'], 'fuck you too'],
     [['talk', 'to you'], 'oh sorry'],
-    [['love you', 'markle'], 'love u too 🩷']
+    [['love you', 'markle'], 'love u too 🩷'],
     [['love u', 'markle'], 'love u too 🩷']
 ]);
 
