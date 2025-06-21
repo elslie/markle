@@ -639,11 +639,6 @@ client.on('messageCreate', async (message) => {
     // Ignore bot messages and DMs for moderation
     if (message.author.bot || !message.guild) return;
 
-    const userId = message.author.id;
-    const content = message.content.trim();
-
-    // ...inside client.on('messageCreate', async (message) => {
-    const userId = message.author.id;
     const content = message.content.trim();
     
     // Get user's timezone or default to UTC
