@@ -532,7 +532,7 @@ client.on('interactionCreate', async interaction => {
 // AI INTEGRATION FUNCTIONS
 // =============================================================================
 
-/*function addServerMessage(guildId, message, username) {
+function addServerMessage(guildId, message, username) {
     if (!serverMessages.has(guildId)) {
         serverMessages.set(guildId, []);
     }
@@ -599,7 +599,7 @@ function analyzeServerPersonality(guildId) {
 async function callGroqAI(message, username, guildId) {
     try {
         const personality = guildId ? analyzeServerPersonality(guildId) : null;
-        let systemPrompt = `You are a helpful AI assistant in a Discord server. Keep responses conversational, friendly, and under 2000 characters. The user's name is ${username}. Be engaging and helpful.`;
+        let systemPrompt = `You are a helpful AI assistant in a Discord server. Your name is Markle. Keep responses conversational, friendly, and under 2000 characters. The user's name is ${username}. Be engaging and helpful. `;
         if (personality) {
             systemPrompt += ` The server has a ${personality.tone} communication style that is ${personality.style}.`;
         }
@@ -638,7 +638,7 @@ function isOnCooldown(userId) {
 function setCooldown(userId) {
     userCooldowns.set(userId, Date.now());
 }
-*/
+
 // =============================================================================
 // MAIN MESSAGE PROCESSING LOGIC
 // =============================================================================
@@ -658,10 +658,11 @@ client.on('messageCreate', async (message) => {
     
     // Only trigger on explicit clock-like times (not "morning", "now", etc.)
     const explicitTimeRegex = /\b((1[0-2]|0?[1-9]):([0-5][0-9])\s?(am|pm)|([01]?[0-9]|2[0-3])(:[0-5][0-9])?\s?(am|pm)?|(noon|midnight))\b/i;
+    const timeMatches = [];
     if (explicitTimeRegex.test(content)) {
         const timeResults = chrono.parse(content, new Date(), { forwardDate: true });
-        if (timeResults.length > 0) {
-            const original = timeResults[0].start;
+        for (const result of timeResults) {
+            const original = result.start;
             let userTime = DateTime.fromObject({
                 year: original.get('year'),
                 month: original.get('month'),
@@ -676,9 +677,11 @@ client.on('messageCreate', async (message) => {
             }
     
             const unixTimestamp = Math.floor(userTime.toSeconds());
-            const discordTimestamp = `<t:${unixTimestamp}:F>`;
+            timeMatches.push(`<t:${unixTimestamp}:F>`);
+        }
+        if (timeMatches.length) {
             try {
-                await message.reply(`You mentioned a time: ${discordTimestamp}`);
+                await message.reply(`You mentioned a time: ${timeMatches.join(', ')}`);
             } catch (e) {}
         }
     }
