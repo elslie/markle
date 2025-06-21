@@ -624,7 +624,7 @@ async function callGroqAI(message, username, guildId) {
         );
         return response.data.choices[0].message.content;
     } catch (error) {
-        return 'Sorry, I encountered an error while processing your request. Please try again later.';
+        return `Sorry, I encountered an error while processing your request. Detail: ${error.message}`;
     }
 }
 
@@ -658,9 +658,9 @@ client.on('messageCreate', async (message) => {
     
     // Only trigger on explicit clock-like times (not "morning", "now", etc.)
     const explicitTimeRegex = /\b((1[0-2]|0?[1-9]):([0-5][0-9])\s?(am|pm)|([01]?[0-9]|2[0-3])(:[0-5][0-9])?\s?(am|pm)?|(noon|midnight))\b/i;
+    const timeResults = chrono.parse(content, new Date(), { forwardDate: true });
     const timeMatches = [];
-    if (explicitTimeRegex.test(content)) {
-        const timeResults = chrono.parse(content, new Date(), { forwardDate: true });
+    if (explicitTimeRegex.test(content) && timeResults.length > 0) {
         for (const result of timeResults) {
             const original = result.start;
             let userTime = DateTime.fromObject({
