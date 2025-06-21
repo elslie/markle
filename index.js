@@ -194,6 +194,9 @@ function checkWordResponses(content) {
     if (/\bcya\b/i.test(originalMessage)) {
         return processRandomPunctuation('cya{!}');
     }
+    if (/\bho\b/i.test(originalMessage)) {
+        return processRandomPunctuation('ho');
+    }
     if (wordResponses[lower]) {
         return processRandomPunctuation(wordResponses[lower]);
     }
