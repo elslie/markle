@@ -128,7 +128,7 @@ function safeDelete(message) {
     deleteQueue.push(async () => {
         try {
             if (message.deletable) {
-                awt message.delete();
+                await message.delete();
             }
         } catch (error) {
             if (error.code !== 10008) { // Unknown Message error
@@ -278,7 +278,7 @@ async function startPingPongGame(channel, userId, expectedWord = 'ping', exchang
             if (exchanges > prev) {
                 pingPongLeaderboard.set(userId, exchanges);
             }
-            awt channel.send(`ggwp <@${userId}>, you had ${exchanges} exchanges`);
+            await channel.send(`ggwp <@${userId}>, you had ${exchanges} exchanges`);
             pingPongGames.delete(userId);
         } catch (error) { }
     }, timeLimit);
@@ -298,9 +298,9 @@ async function sendChallenge(channel, userId, intro = true) {
         const count = Math.floor(Math.random() * 21) + 10;
         const exclamations = generateExclamations(count);
         if (intro) {
-            awt channel.send(`hey <@${userId}> how many`);
+            await channel.send(`hey <@${userId}> how many`);
         }
-        awt channel.send(`<@${userId}> count${exclamations}`);
+        await channel.send(`<@${userId}> count${exclamations}`);
         activeChallenges.set(userId, {
             state: 'wting',
             answer: count,
@@ -318,10 +318,10 @@ async function startFreeSpeechCountdown(channel, userId) {
             const elapsed = Date.now() - startTime;
             const remning = Math.ceil((FREE_SPEECH_DURATION - elapsed) / 1000);
             if (remning > 0) {
-                const msg = awt channel.send(`${remning}`);
+                const msg = await channel.send(`${remning}`);
                 setTimeout(() => safeDelete(msg), 3000);
             } else {
-                awt channel.send(`<@${userId}> no more free speech`);
+                await channel.send(`<@${userId}> no more free speech`);
                 freeSpeechTimers.delete(userId);
                 countdownIntervals.delete(userId);
                 clearInterval(interval);
@@ -341,7 +341,7 @@ setInterval(async () => {
     const job = deleteQueue.shift();
     if (job) {
         try {
-            awt job();
+            await job();
         } catch (error) { }
     }
 }, DELETE_QUEUE_INTERVAL);
@@ -354,7 +354,7 @@ client.once('ready', async () => {
 
     setInterval(async () => {
         try {
-            const channel = awt client.channels.fetch(TEST_CHANNEL_ID).catch(() => null);
+            const channel = await client.channels.fetch(TEST_CHANNEL_ID).catch(() => null);
             if (!channel || !channel.isTextBased()) return;
             const msg = await channel.send('✅ Still alive');
             setTimeout(() => safeDelete(msg), 5000);
@@ -425,7 +425,7 @@ client.on('interactionCreate', async interaction => {
             const channel = interaction.channel;
 
             clearUserState(user.id);
-            awt sendChallenge(channel, user.id);
+            await sendChallenge(channel, user.id);
 
             const timeout = setTimeout(() => {
                 clearUserState(user.id);
@@ -433,7 +433,7 @@ client.on('interactionCreate', async interaction => {
             }, duration * 1000);
 
             muteTimeouts.set(user.id, timeout);
-            awt interaction.reply({
+            await interaction.reply({
                 content: `✅ Challenge started for <@${user.id}> (Duration: ${duration}s)`,
                 flags: MessageFlags.Ephemeral
             });
