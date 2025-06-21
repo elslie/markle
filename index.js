@@ -656,43 +656,35 @@ client.on('messageCreate', async (message) => {
     // Parse times in the user's message
     const timeResults = chrono.parse(content, new Date(), { forwardDate: true });
     
-    if (timeResults.length > 0) {
-        // We assume the user intends "9pm" in THEIR local time, not the server's
-        const original = timeResults[0].start;
-        // Build a DateTime in user's local zone
-        let userTime = DateTime.fromObject({
-            year: original.get('year'),
-            month: original.get('month'),
-            day: original.get('day'),
-            hour: original.get('hour'),
-            minute: original.get('minute') || 0,
-            second: original.get('second') || 0,
-        }, { zone });
+    // Get user's timezone or default to UTC
+    const zone = userTimezones.get(userId) || 'UTC';
     
-        // If the result is invalid, fall back to .fromJSDate
-        if (!userTime.isValid) {
-            userTime = DateTime.fromJSDate(original.date()).setZone(zone, { keepLocalTime: true });
-        }
+    // Only trigger on explicit clock-like times (not "morning", "now", etc.)
+    const explicitTimeRegex = /\b((1[0-2]|0?[1-9]):([0-5][0-9])\s?(am|pm)|([01]?[0-9]|2[0-3])(:[0-5][0-9])?\s?(am|pm)?|(noon|midnight))\b/i;
+    if (explicitTimeRegex.test(content)) {
+        const timeResults = chrono.parse(content, new Date(), { forwardDate: true });
+        if (timeResults.length > 0) {
+            const original = timeResults[0].start;
+            let userTime = DateTime.fromObject({
+                year: original.get('year'),
+                month: original.get('month'),
+                day: original.get('day'),
+                hour: original.get('hour'),
+                minute: original.get('minute') || 0,
+                second: original.get('second') || 0,
+            }, { zone });
     
-        const unixTimestamp = Math.floor(userTime.toSeconds());
-        const discordTimestamp = `<t:${unixTimestamp}:F>`;
+            if (!userTime.isValid) {
+                userTime = DateTime.fromJSDate(original.date()).setZone(zone, { keepLocalTime: true });
+            }
     
-        try {
-            await message.reply(`You mentioned a time: ${discordTimestamp}`);
-        } catch (e) {
-            // Optionally log or ignore
+            const unixTimestamp = Math.floor(userTime.toSeconds());
+            const discordTimestamp = `<t:${unixTimestamp}:F>`;
+            try {
+                await message.reply(`You mentioned a time: ${discordTimestamp}`);
+            } catch (e) {}
         }
     }
-    // ====== DISCORD TIMESTAMP FEATURE (START) ======
-    if (timeResults.length > 0) {
-        const parsedDate = timeResults[0].start.date();
-        const unixTimestamp = Math.floor(parsedDate.getTime() / 1000);
-        const discordTimestamp = `<t:${unixTimestamp}:F>`;
-        try {
-            await message.reply(`You mentioned a time: ${discordTimestamp}`);
-        } catch (e) {}
-    }
-    // ====== DISCORD TIMESTAMP FEATURE (END) ======
 
     if (containsBannedWord(content)) {
         safeDelete(message);
