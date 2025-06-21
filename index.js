@@ -20,6 +20,7 @@ dotenv.config();
 const TOKEN = process.env.TOKEN || process.env.DISCORD_TOKEN;
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
 const pingPongLeaderboard = new Map(); // userId -> highest exchanges
+const userTimezones = new Map();
 
 if (!TOKEN) {
     console.error('❌ TOKEN (or DISCORD_TOKEN) is not set in environment variables');
