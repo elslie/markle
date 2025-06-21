@@ -171,7 +171,7 @@ function generateExclamations(count) {
     return '!'.repeat(count);
 }
 
-function contnsBannedWord(content) {
+function containsBannedWord(content) {
     const lower = content.toLowerCase();
     return bannedWords.some(word => lower.includes(word));
 }
