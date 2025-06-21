@@ -131,7 +131,6 @@ function loadLeaderboard() {
             const data = JSON.parse(fs.readFileSync(LEADERBOARD_FILE, 'utf8'));
             for (const [userId, score] of Object.entries(data)) {
                 pingPongLeaderboard.set(userId, score);
-                saveLeaderboard();
             }
         } catch (err) {
             console.error('Could not load leaderboard:', err);
@@ -154,7 +153,6 @@ function loadTimezones() {
             const data = JSON.parse(fs.readFileSync(TIMEZONES_FILE, 'utf8'));
             for (const [userId, zone] of Object.entries(data)) {
                 userTimezones.set(userId, zone);
-                saveTimezones();
             }
         } catch (err) {
             console.error('Could not load timezones:', err);
