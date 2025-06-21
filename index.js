@@ -9,6 +9,7 @@
 
 // ---- Imports and Setup ----
 import './keepAlive.js';
+import fs from 'fs';
 import express from 'express';
 import dotenv from 'dotenv';
 import { Client, GatewayIntentBits, Partials, REST, Routes, SlashCommandBuilder, EmbedBuilder, MessageFlags } from 'discord.js';
@@ -119,6 +120,54 @@ const COOLDOWN_TIME = 5000;
 const serverPersonalities = new Map();
 const serverMessages = new Map();
 const MAX_MESSAGES_PER_SERVER = 200;
+
+const LEADERBOARD_FILE = './pingpong_leaderboard.json';
+const TIMEZONES_FILE = './user_timezones.json';
+
+// Step 3: Add these functions below
+function loadLeaderboard() {
+    if (fs.existsSync(LEADERBOARD_FILE)) {
+        try {
+            const data = JSON.parse(fs.readFileSync(LEADERBOARD_FILE, 'utf8'));
+            for (const [userId, score] of Object.entries(data)) {
+                pingPongLeaderboard.set(userId, score);
+            }
+        } catch (err) {
+            console.error('Could not load leaderboard:', err);
+        }
+    }
+}
+
+function saveLeaderboard() {
+    try {
+        const data = Object.fromEntries(pingPongLeaderboard.entries());
+        fs.writeFileSync(LEADERBOARD_FILE, JSON.stringify(data, null, 2));
+    } catch (err) {
+        console.error('Could not save leaderboard:', err);
+    }
+}
+
+function loadTimezones() {
+    if (fs.existsSync(TIMEZONES_FILE)) {
+        try {
+            const data = JSON.parse(fs.readFileSync(TIMEZONES_FILE, 'utf8'));
+            for (const [userId, zone] of Object.entries(data)) {
+                userTimezones.set(userId, zone);
+            }
+        } catch (err) {
+            console.error('Could not load timezones:', err);
+        }
+    }
+}
+
+function saveTimezones() {
+    try {
+        const data = Object.fromEntries(userTimezones.entries());
+        fs.writeFileSync(TIMEZONES_FILE, JSON.stringify(data, null, 2));
+    } catch (err) {
+        console.error('Could not save timezones:', err);
+    }
+}
 
 // =============================================================================
 // UTILITY & MODERATION FUNCTIONS
