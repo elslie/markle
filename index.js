@@ -131,6 +131,7 @@ function loadLeaderboard() {
             const data = JSON.parse(fs.readFileSync(LEADERBOARD_FILE, 'utf8'));
             for (const [userId, score] of Object.entries(data)) {
                 pingPongLeaderboard.set(userId, score);
+                saveLeaderboard();
             }
         } catch (err) {
             console.error('Could not load leaderboard:', err);
@@ -153,6 +154,7 @@ function loadTimezones() {
             const data = JSON.parse(fs.readFileSync(TIMEZONES_FILE, 'utf8'));
             for (const [userId, zone] of Object.entries(data)) {
                 userTimezones.set(userId, zone);
+                saveTimezones();
             }
         } catch (err) {
             console.error('Could not load timezones:', err);
@@ -168,6 +170,14 @@ function saveTimezones() {
         console.error('Could not save timezones:', err);
     }
 }
+
+loadLeaderboard();
+loadTimezones();
+
+setInterval(() => {
+    saveLeaderboard();
+    saveTimezones();
+}, 5 * 60 * 1000);
 
 // =============================================================================
 // UTILITY & MODERATION FUNCTIONS
@@ -303,6 +313,7 @@ function handlePingPongResponse(message, content) {
             const prev = pingPongLeaderboard.get(userId) || 0;
             if (newExchanges > prev) {
                 pingPongLeaderboard.set(userId, newExchanges);
+                saveLeaderboard();
             }
         }
 
@@ -326,6 +337,7 @@ async function startPingPongGame(channel, userId, expectedWord = 'ping', exchang
             const prev = pingPongLeaderboard.get(userId) || 0;
             if (exchanges > prev) {
                 pingPongLeaderboard.set(userId, exchanges);
+                saveLeaderboard();
             }
             await channel.send(`ggwp <@${userId}>, you had ${exchanges} exchanges`);
             pingPongGames.delete(userId);
@@ -565,6 +577,7 @@ client.on('interactionCreate', async interaction => {
                     return interaction.reply({ content: "❌ Invalid timezone. Please use a valid IANA timezone like America/New_York.", ephemeral: true });
                 }
                 userTimezones.set(interaction.user.id, zone);
+                saveTimezones();
                 await interaction.reply({ content: `✅ Your timezone has been set to **${zone}**!`, ephemeral: true });
             } catch (err) {
                 await interaction.reply({ content: "❌ Error setting timezone.", ephemeral: true });
