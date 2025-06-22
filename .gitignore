@@ -131,6 +131,3 @@ dist
 
 # Replit debugger
 .breakpoints
-
-pingpong_leaderboard.json
-user_timezones.json
