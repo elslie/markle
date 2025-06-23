@@ -14,6 +14,59 @@ dotenv.config();
 const TOKEN = process.env.TOKEN || process.env.DISCORD_TOKEN;
 const pingPongLeaderboard = new Map(); // userId -> highest exchanges
 
+// 3. <<< INSERT THE REVISED LEADERBOARD BLOCK HERE >>>
+const LEADERBOARD_FILE = path.resolve(process.cwd(), 'pingpong_leaderboard.json');
+console.log(`[Leaderboard] Using leaderboard file at: ${LEADERBOARD_FILE}`);
+
+function loadLeaderboard() {
+    if (fs.existsSync(LEADERBOARD_FILE)) {
+        try {
+            const raw = fs.readFileSync(LEADERBOARD_FILE, 'utf8');
+            const data = JSON.parse(raw);
+            for (const [userId, score] of Object.entries(data)) {
+                pingPongLeaderboard.set(userId, score);
+            }
+            console.log(`[Leaderboard] Loaded leaderboard from file (${Object.keys(data).length} entries)`);
+        } catch (err) {
+            console.error('[Leaderboard] Could not load leaderboard:', err);
+        }
+    } else {
+        try {
+            fs.writeFileSync(LEADERBOARD_FILE, '{}');
+            console.log('[Leaderboard] Created new leaderboard file');
+        } catch (err) {
+            console.error('[Leaderboard] Could not create leaderboard file:', err);
+            console.error('[Leaderboard] File writing may not be supported in this environment!');
+        }
+    }
+}
+
+function saveLeaderboard() {
+    try {
+        const data = Object.fromEntries(pingPongLeaderboard.entries());
+        fs.writeFileSync(LEADERBOARD_FILE, JSON.stringify(data, null, 2));
+        console.log(`[Leaderboard] Leaderboard saved (${pingPongLeaderboard.size} entries)`);
+    } catch (err) {
+        console.error('[Leaderboard] Could not save leaderboard:', err);
+    }
+}
+
+// Load on boot
+loadLeaderboard();
+
+// Save every 5 minutes
+setInterval(saveLeaderboard, 5 * 60 * 1000);
+
+// Save on exit
+const saveOnExit = () => {
+    console.log('[Leaderboard] Saving leaderboard before exit...');
+    saveLeaderboard();
+    process.exit(0);
+};
+process.on('SIGINT', saveOnExit);
+process.on('SIGTERM', saveOnExit);
+
+
 if (!TOKEN) {
     console.error('❌ TOKEN (or DISCORD_TOKEN) is not set in environment variables');
     process.exit(1);
