@@ -13,9 +13,8 @@ import { Client, GatewayIntentBits, Partials, REST, Routes, SlashCommandBuilder,
 dotenv.config();
 
 const TOKEN = process.env.TOKEN || process.env.DISCORD_TOKEN;
-const pingPongLeaderboard = new Map(); // userId -> highest exchanges
+const pingPongLeaderboard = new Map();
 
-// ---- LEADERBOARD SETUP ----
 const LEADERBOARD_FILE = path.resolve(process.cwd(), 'pingpong_leaderboard.json');
 console.log(`[Leaderboard] Using leaderboard file at: ${LEADERBOARD_FILE}`);
 
@@ -23,6 +22,7 @@ function loadLeaderboard() {
     if (fs.existsSync(LEADERBOARD_FILE)) {
         try {
             const raw = fs.readFileSync(LEADERBOARD_FILE, 'utf8');
+            console.log('[Leaderboard] File content at load:', raw);
             const data = JSON.parse(raw);
             for (const [userId, score] of Object.entries(data)) {
                 pingPongLeaderboard.set(userId, score);
@@ -49,6 +49,7 @@ function saveLeaderboard() {
         console.log(`[Leaderboard] Leaderboard saved (${pingPongLeaderboard.size} entries)`);
     } catch (err) {
         console.error('[Leaderboard] Could not save leaderboard:', err);
+        console.error('[Leaderboard] File writing may not be supported in this environment!');
     }
 }
 
@@ -517,8 +518,11 @@ client.on('interactionCreate', async interaction => {
             const top = [...pingPongLeaderboard.entries()]
                 .sort((a, b) => b[1] - a[1])
                 .slice(0, 10);
+
+            await interaction.deferReply(); // DEFER IMMEDIATELY!
+
             if (top.length === 0) {
-                await interaction.reply('No ping pong games played yet!');
+                await interaction.editReply('No ping pong games played yet!');
             } else {
                 const leaderboard = await Promise.all(top.map(async ([userId, score], idx) => {
                     let username;
@@ -530,7 +534,6 @@ client.on('interactionCreate', async interaction => {
                     }
                     return `${idx + 1}. ${username}: ${score}`;
                 }));
-                await interaction.deferReply();
                 await interaction.editReply({
                     content: `🏓 **Ping Pong Leaderboard** 🏓\n${leaderboard.join('\n')}`
                 });
@@ -540,6 +543,7 @@ client.on('interactionCreate', async interaction => {
         if (!interaction.replied && !interaction.deferred) {
             await interaction.reply({ content: '❌ An error occurred while processing the command.', flags: MessageFlags.Ephemeral });
         }
+        console.error('Discord slash command error:', error);
     }
 });
 
@@ -636,3 +640,11 @@ client.login(TOKEN).catch(error => {
     console.error('Failed to login:', error);
     process.exit(1);
 });
+
+/*
+===============================================================================
+NOTE: If you deploy to Render, Heroku, Vercel, or similar, the leaderboard file
+      will NOT persist between deploys/restarts. Use a real database for
+      production storage!
+===============================================================================
+*/
