@@ -5,6 +5,7 @@
 // ---- Imports and Setup ----
 import './keepAlive.js';
 import fs from 'fs';
+import path from 'path'; // <--- ADD THIS LINE
 import express from 'express';
 import dotenv from 'dotenv';
 import { Client, GatewayIntentBits, Partials, REST, Routes, SlashCommandBuilder, EmbedBuilder, MessageFlags } from 'discord.js';
@@ -14,7 +15,7 @@ dotenv.config();
 const TOKEN = process.env.TOKEN || process.env.DISCORD_TOKEN;
 const pingPongLeaderboard = new Map(); // userId -> highest exchanges
 
-// 3. <<< INSERT THE REVISED LEADERBOARD BLOCK HERE >>>
+// ---- LEADERBOARD SETUP ----
 const LEADERBOARD_FILE = path.resolve(process.cwd(), 'pingpong_leaderboard.json');
 console.log(`[Leaderboard] Using leaderboard file at: ${LEADERBOARD_FILE}`);
 
