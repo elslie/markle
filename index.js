@@ -1,10 +1,5 @@
-//nts: copilot prompt
-//you know that discord has these special commands <t:1750440945:F> like that to make the time accurate for everyone despite time zones, 
-//can you make it so that when anyone says a time, like 9pm or like 9 pm, 
-//markle will say a message in this format <t:1750440945:F> to make it accurate and clear for everyone
-
 // =============================================================================
-// DISCORD MODERATION BOT + GROQ AI INTEGRATION - MAIN CONFIGURATION
+// DISCORD MODERATION BOT - MAIN CONFIGURATION (NO AI, NO TIMEZONES)
 // =============================================================================
 
 // ---- Imports and Setup ----
@@ -13,23 +8,14 @@ import fs from 'fs';
 import express from 'express';
 import dotenv from 'dotenv';
 import { Client, GatewayIntentBits, Partials, REST, Routes, SlashCommandBuilder, EmbedBuilder, MessageFlags } from 'discord.js';
-import axios from 'axios';
-import * as chrono from 'chrono-node';
-import { DateTime } from 'luxon';
 
 dotenv.config();
 
 const TOKEN = process.env.TOKEN || process.env.DISCORD_TOKEN;
-const GROQ_API_KEY = process.env.GROQ_API_KEY;
 const pingPongLeaderboard = new Map(); // userId -> highest exchanges
-const userTimezones = new Map();
 
 if (!TOKEN) {
     console.error('❌ TOKEN (or DISCORD_TOKEN) is not set in environment variables');
-    process.exit(1);
-}
-if (!GROQ_API_KEY) {
-    console.error('❌ GROQ_API_KEY is not set in environment variables');
     process.exit(1);
 }
 
@@ -114,15 +100,7 @@ const pingPongGames = new Map();
 const sleepMutedUsers = new Set();
 const tempUnmuteTimeouts = new Map();
 
-const GROQ_API_URL = 'https://api.groq.com/open/v1/chat/completions';
-const userCooldowns = new Map();
-const COOLDOWN_TIME = 5000;
-const serverPersonalities = new Map();
-const serverMessages = new Map();
-const MAX_MESSAGES_PER_SERVER = 200;
-
 const LEADERBOARD_FILE = './pingpong_leaderboard.json';
-const TIMEZONES_FILE = './user_timezones.json';
 
 // Step 3: Add these functions below
 function loadLeaderboard() {
@@ -147,34 +125,10 @@ function saveLeaderboard() {
     }
 }
 
-function loadTimezones() {
-    if (fs.existsSync(TIMEZONES_FILE)) {
-        try {
-            const data = JSON.parse(fs.readFileSync(TIMEZONES_FILE, 'utf8'));
-            for (const [userId, zone] of Object.entries(data)) {
-                userTimezones.set(userId, zone);
-            }
-        } catch (err) {
-            console.error('Could not load timezones:', err);
-        }
-    }
-}
-
-function saveTimezones() {
-    try {
-        const data = Object.fromEntries(userTimezones.entries());
-        fs.writeFileSync(TIMEZONES_FILE, JSON.stringify(data, null, 2));
-    } catch (err) {
-        console.error('Could not save timezones:', err);
-    }
-}
-
 loadLeaderboard();
-loadTimezones();
 
 setInterval(() => {
     saveLeaderboard();
-    saveTimezones();
 }, 5 * 60 * 1000);
 
 // =============================================================================
@@ -440,14 +394,7 @@ client.once('ready', async () => {
             .setDescription('Show bot status and active challenges'),
         new SlashCommandBuilder()
             .setName('pingpongleaderboard')
-            .setDescription('Show the top 10 longest ping pong streaks'),
-        new SlashCommandBuilder()
-            .setName('timezone')
-            .setDescription('Set your timezone for accurate time conversion (e.g., America/New_York)')
-            .addStringOption(opt =>
-            opt.setName('zone')
-                .setDescription('Your IANA timezone, e.g., America/New_York or Europe/Berlin')
-                .setRequired(true)),
+            .setDescription('Show the top 10 longest ping pong streaks')
     ].map(cmd => cmd.toJSON());
 
     const rest = new REST({ version: '10' }).setToken(TOKEN);
@@ -566,21 +513,6 @@ client.on('interactionCreate', async interaction => {
                 });
             }
         }
-        else if (interaction.commandName === 'timezone') {
-            const zone = interaction.options.getString('zone');
-            // Validate with luxon
-            try {
-                const { DateTime } = await import('luxon');
-                if (!DateTime.local().setZone(zone).isValid) {
-                    return interaction.reply({ content: "❌ Invalid timezone. Please use a valid IANA timezone like America/New_York.", flags: MessageFlags.Ephemeral });
-                }
-                userTimezones.set(interaction.user.id, zone);
-                saveTimezones();
-                await interaction.reply({ content: `✅ Your timezone has been set to **${zone}**!`, flags: MessageFlags.Ephemeral });
-            } catch (err) {
-                await interaction.reply({ content: "❌ Error setting timezone.", flags: MessageFlags.Ephemeral });
-            }
-        }
     } catch (error) {
         if (!interaction.replied && !interaction.deferred) {
             await interaction.reply({ content: '❌ An error occurred while processing the command.', flags: MessageFlags.Ephemeral });
@@ -589,125 +521,13 @@ client.on('interactionCreate', async interaction => {
 });
 
 // =============================================================================
-// AI INTEGRATION FUNCTIONS
-// =============================================================================
-
-function addServerMessage(guildId, message, username) {
-    if (!serverMessages.has(guildId)) {
-        serverMessages.set(guildId, []);
-    }
-    const messages = serverMessages.get(guildId);
-    messages.push({ content: message, username: username, timestamp: Date.now() });
-    if (messages.length > MAX_MESSAGES_PER_SERVER) {
-        messages.shift();
-    }
-}
-
-function analyzeServerPersonality(guildId) {
-    const messages = serverMessages.get(guildId) || [];
-    if (messages.length < 10) {
-        return {
-            tone: "casual and friendly",
-            style: "conversational",
-            examples: []
-        };
-    }
-    const recentMessages = messages.slice(-50);
-    const messageTexts = recentMessages.map(m => m.content);
-    let casualCount = 0, formalCount = 0, emojiCount = 0, capsCount = 0, contractionCount = 0, slangCount = 0;
-    const slangWords = ['lol', 'lmao', 'bruh', 'fr', 'ngl', 'tbh', 'smh', 'imo', 'rn', 'af', 'sus', 'cap', 'no cap', 'bet', 'fam', 'lowkey', 'highkey'];
-    const casualWords = ['yeah', 'yep', 'nah', 'gonna', 'wanna', 'kinda', 'sorta'];
-    messageTexts.forEach(msg => {
-        const lower = msg.toLowerCase();
-        if (/[\u{1F600}-\u{1F64F}]|[\u{1F300}-\u{1F5FF}]|[\u{1F680}-\u{1F6FF}]|[\u{1F1E0}-\u{1F1FF}]|[\u2600-\u26FF]|[\u2700-\u27BF]/u.test(msg)) emojiCount++;
-        if (msg !== msg.toLowerCase() && msg.length > 3) capsCount++;
-        if (/\b(don't|won't|can't|isn't|aren't|wasn't|weren't|haven't|hasn't|hadn't|wouldn't|couldn't|shouldn't|mustn't|needn't|daren't|mayn't|oughtn't|mightn't|'ll|'re|'ve|'d|'m|'s)\b/i.test(msg)) contractionCount++;
-        slangWords.forEach(slang => { if (lower.includes(slang)) slangCount++; });
-        casualWords.forEach(casual => { if (lower.includes(casual)) casualCount++; });
-        if (/\b(however|therefore|furthermore|nevertheless|consequently|moreover|additionally)\b/i.test(msg)) formalCount++;
-    });
-    const totalMessages = messageTexts.length;
-    const emojiRate = emojiCount / totalMessages;
-    const slangRate = slangCount / totalMessages;
-    const casualRate = casualCount / totalMessages;
-    const contractionRate = contractionCount / totalMessages;
-    let tone = "casual and friendly";
-    let style = "conversational";
-    if (slangRate > 0.3 || emojiRate > 0.4) {
-        tone = "very casual and expressive";
-        style = "informal with slang and emojis";
-    } else if (casualRate > 0.2 && contractionRate > 0.3) {
-        tone = "relaxed and conversational";
-        style = "casual with contractions";
-    } else if (formalCount > casualCount) {
-        tone = "more formal and polite";
-        style = "structured and proper";
-    }
-    return {
-        tone: tone,
-        style: style,
-        examples: messageTexts.slice(-10),
-        stats: {
-            emojiRate: Math.round(emojiRate * 100),
-            slangRate: Math.round(slangRate * 100),
-            casualRate: Math.round(casualRate * 100),
-            contractionRate: Math.round(contractionRate * 100)
-        }
-    };
-}
-
-async function callGroqAI(message, username, guildId) {
-    try {
-        const personality = guildId ? analyzeServerPersonality(guildId) : null;
-        let systemPrompt = `You are a helpful AI assistant in a Discord server. Your name is Markle. Keep responses conversational, friendly, and under 2000 characters. The user's name is ${username}. Be engaging and helpful. `;
-        if (personality) {
-            systemPrompt += ` The server has a ${personality.tone} communication style that is ${personality.style}.`;
-        }
-        const requestData = {
-            messages: [
-                { role: 'system', content: systemPrompt },
-                { role: 'user', content: message }
-            ],
-            model: 'llama3-8b-8192',
-            temperature: 0.7,
-            max_tokens: 500,
-        };
-        const response = await axios.post(
-            GROQ_API_URL,
-            requestData,
-            {
-                headers: {
-                    'Authorization': `Bearer ${GROQ_API_KEY}`,
-                    'Content-Type': 'application/json',
-                },
-            }
-        );
-        return response.data.choices[0].message.content;
-    } catch (error) {
-        return `Sorry, I encountered an error while processing your request. Detail: ${error.message}`;
-    }
-}
-
-function isOnCooldown(userId) {
-    if (userCooldowns.has(userId)) {
-        const expirationTime = userCooldowns.get(userId) + COOLDOWN_TIME;
-        if (Date.now() < expirationTime) return true;
-    }
-    return false;
-}
-function setCooldown(userId) {
-    userCooldowns.set(userId, Date.now());
-}
-
-// =============================================================================
-// MAIN MESSAGE PROCESSING LOGIC
+// MAIN MESSAGE PROCESSING LOGIC (NO AI, NO TIMEZONES)
 // =============================================================================
 client.on('messageCreate', async (message) => {
     if (message.author.bot || !message.guild) return;
 
     const userId = message.author.id;
     const content = message.content.trim();
-    const zone = userTimezones.get(userId) || 'UTC';
 
     // --- 1. Handle banned words ---
     if (containsBannedWord(content)) {
@@ -716,38 +536,7 @@ client.on('messageCreate', async (message) => {
         return;
     }
 
-    // --- 2. Handle time mentions (DISCORD TIMESTAMP) ---
-    const timeResults = chrono.parse(content, new Date(), { forwardDate: true });
-    const explicitTimeRegex = /\b((1[0-2]|0?[1-9]):([0-5][0-9])\s?(am|pm)|([01]?[0-9]|2[0-3])(:[0-5][0-9])?\s?(am|pm)?|(noon|midnight))\b/i;
-    const timeMatches = [];
-    if (explicitTimeRegex.test(content) && timeResults.length > 0) {
-        for (const result of timeResults) {
-            const original = result.start;
-            let userTime = DateTime.fromObject({
-                year: original.get('year'),
-                month: original.get('month'),
-                day: original.get('day'),
-                hour: original.get('hour'),
-                minute: original.get('minute') || 0,
-                second: original.get('second') || 0,
-            }, { zone });
-
-            if (!userTime.isValid) {
-                userTime = DateTime.fromJSDate(original.date()).setZone(zone, { keepLocalTime: true });
-            }
-
-            const unixTimestamp = Math.floor(userTime.toSeconds());
-            timeMatches.push(`<t:${unixTimestamp}:F>`);
-        }
-        if (timeMatches.length) {
-            try {
-                await message.reply(`You mentioned a time: ${timeMatches.join(', ')}`);
-            } catch (e) {}
-            return;
-        }
-    }
-
-    // --- 3. Handle allowed users (ping pong, keywords) ---
+    // --- 2. Handle allowed users (ping pong, keywords) ---
     if (allowedUsers.has(userId)) {
         if (handlePingPongResponse(message, content)) return;
         const response = checkWordResponses(content);
@@ -757,13 +546,13 @@ client.on('messageCreate', async (message) => {
         }
     }
 
-    // --- 4. Handle sleep muted users ---
+    // --- 3. Handle sleep muted users ---
     if (sleepMutedUsers.has(userId)) {
         safeDelete(message);
         return;
     }
 
-    // --- 5. Handle regular users not muted ---
+    // --- 4. Handle regular users not muted ---
     if (!mutedUsers.has(userId)) {
         if (handlePingPongResponse(message, content)) return;
         const response = checkWordResponses(content);
@@ -771,44 +560,10 @@ client.on('messageCreate', async (message) => {
             try { await message.channel.send(response); } catch (error) { }
             return;
         }
-        if (message.mentions.has(client.user)) {
-            if (isOnCooldown(userId)) {
-                await message.reply(`⏰ Please wait a few seconds before asking another question.`);
-                return;
-            }
-            setCooldown(userId);
-            await message.channel.sendTyping();
-            try {
-                let cleanContent = message.content
-                    .replace(/<@!?\d+>/g, '')
-                    .replace(/<@&\d+>/g, '')
-                    .replace(/<#\d+>/g, '')
-                    .trim();
-                if (!cleanContent) cleanContent = "Hello! How can I help you?";
-                const groqResponse = await callGroqAI(
-                    cleanContent,
-                    message.author.displayName || message.author.username,
-                    message.guild?.id || null
-                );
-                await message.reply(groqResponse);
-            } catch (error) {
-                await message.reply('❌ Sorry, I encountered an error while processing your request.');
-            }
-            return;
-        }
-        if (message.author.id !== client.user.id && message.guild) {
-            if (!message.mentions.has(client.user) && message.content.length > 3) {
-                addServerMessage(
-                    message.guild.id,
-                    message.content,
-                    message.author.displayName || message.author.username
-                );
-            }
-        }
         return;
     }
 
-    // --- 6. Handle muted users with challenges ---
+    // --- 5. Handle muted users with challenges ---
     const challenge = activeChallenges.get(userId);
     const freeSpeechTimer = freeSpeechTimers.get(userId);
     if (freeSpeechTimer) return;
