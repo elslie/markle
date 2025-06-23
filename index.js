@@ -4,10 +4,9 @@
 
 // ---- Imports and Setup ----
 import './keepAlive.js';
-import fs from 'fs';
-import path from 'path';
 import express from 'express';
 import dotenv from 'dotenv';
+import Database from 'better-sqlite3';
 import { Client, GatewayIntentBits, Partials, REST, Routes, SlashCommandBuilder, EmbedBuilder, MessageFlags } from 'discord.js';
 
 dotenv.config();
@@ -15,42 +14,31 @@ dotenv.config();
 const TOKEN = process.env.TOKEN || process.env.DISCORD_TOKEN;
 const pingPongLeaderboard = new Map();
 
-const LEADERBOARD_FILE = path.resolve(process.cwd(), 'pingpong_leaderboard.json');
-console.log(`[Leaderboard] Using leaderboard file at: ${LEADERBOARD_FILE}`);
+// ---- SQLite Leaderboard ----
+const db = new Database('leaderboard.db');
+db.prepare(`
+  CREATE TABLE IF NOT EXISTS leaderboard (
+    userId TEXT PRIMARY KEY,
+    score INTEGER NOT NULL
+  )
+`).run();
 
 function loadLeaderboard() {
-    if (fs.existsSync(LEADERBOARD_FILE)) {
-        try {
-            const raw = fs.readFileSync(LEADERBOARD_FILE, 'utf8');
-            console.log('[Leaderboard] File content at load:', raw);
-            const data = JSON.parse(raw);
-            for (const [userId, score] of Object.entries(data)) {
-                pingPongLeaderboard.set(userId, score);
-            }
-            console.log(`[Leaderboard] Loaded leaderboard from file (${Object.keys(data).length} entries)`);
-        } catch (err) {
-            console.error('[Leaderboard] Could not load leaderboard:', err);
-        }
-    } else {
-        try {
-            fs.writeFileSync(LEADERBOARD_FILE, '{}');
-            console.log('[Leaderboard] Created new leaderboard file');
-        } catch (err) {
-            console.error('[Leaderboard] Could not create leaderboard file:', err);
-            console.error('[Leaderboard] File writing may not be supported in this environment!');
-        }
+    pingPongLeaderboard.clear();
+    for (const row of db.prepare('SELECT userId, score FROM leaderboard').all()) {
+        pingPongLeaderboard.set(row.userId, row.score);
     }
+    console.log(`[Leaderboard] Loaded ${pingPongLeaderboard.size} entries from database.`);
 }
 
 function saveLeaderboard() {
-    try {
-        const data = Object.fromEntries(pingPongLeaderboard.entries());
-        fs.writeFileSync(LEADERBOARD_FILE, JSON.stringify(data, null, 2));
-        console.log(`[Leaderboard] Leaderboard saved (${pingPongLeaderboard.size} entries)`);
-    } catch (err) {
-        console.error('[Leaderboard] Could not save leaderboard:', err);
-        console.error('[Leaderboard] File writing may not be supported in this environment!');
+    const insert = db.prepare(
+        'INSERT INTO leaderboard (userId, score) VALUES (?, ?) ON CONFLICT(userId) DO UPDATE SET score=excluded.score'
+    );
+    for (const [userId, score] of pingPongLeaderboard.entries()) {
+        insert.run(userId, score);
     }
+    console.log(`[Leaderboard] Saved ${pingPongLeaderboard.size} entries to database.`);
 }
 
 // Load on boot
