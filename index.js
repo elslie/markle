@@ -6,12 +6,11 @@ import { Client, GatewayIntentBits, Partials, REST, Routes, SlashCommandBuilder,
 
 dotenv.config();
 
-console.log('Bot process started at', new Date().toISOString());
+console.log('=== Markle Bot starting up at', new Date().toISOString());
 
 const TOKEN = process.env.TOKEN || process.env.DISCORD_TOKEN;
 const pingPongLeaderboard = new Map();
 
-// ---- SQLite Leaderboard ----
 const db = new Database('leaderboard.db');
 db.prepare(`
   CREATE TABLE IF NOT EXISTS leaderboard (
@@ -44,7 +43,6 @@ loadLeaderboard();
 // Save every 5 minutes
 setInterval(saveLeaderboard, 5 * 60 * 1000);
 
-// Save on exit
 const saveOnExit = () => {
     console.log('[Leaderboard] Saving leaderboard before exit...');
     saveLeaderboard();
@@ -143,7 +141,6 @@ const tempUnmuteTimeouts = new Map();
 // =============================================================================
 // UTILITY & MODERATION FUNCTIONS
 // =============================================================================
-
 function safeDelete(message) {
     deleteQueue.push(async () => {
         try {
@@ -151,7 +148,7 @@ function safeDelete(message) {
                 await message.delete();
             }
         } catch (error) {
-            if (error.code !== 10008) {
+            if (error.code !== 10008) { // Unknown Message error
                 console.error('Delete fled:', error.message);
             }
         }
@@ -244,7 +241,7 @@ function checkWordResponses(content) {
 }
 
 // =============================================================================
-// PING PONG GAME FUNCTIONS
+// PING PONG GAME FUNCTIONS (ALTERNATING VERSION)
 // =============================================================================
 
 function handlePingPongResponse(message, content) {
@@ -418,6 +415,7 @@ client.once('ready', async () => {
 // =============================================================================
 // SLASH COMMAND HANDLER
 // =============================================================================
+client.removeAllListeners('interactionCreate');
 client.on('interactionCreate', async interaction => {
     if (!interaction.isChatInputCommand()) return;
 
@@ -530,23 +528,19 @@ client.on('interactionCreate', async interaction => {
     }
 });
 
-// =============================================================================
-// MAIN MESSAGE PROCESSING LOGIC
-// =============================================================================
+client.removeAllListeners('messageCreate');
 client.on('messageCreate', async (message) => {
     if (message.author.bot || !message.guild) return;
 
     const userId = message.author.id;
     const content = message.content.trim();
 
-    // --- 1. Handle banned words ---
     if (containsBannedWord(content)) {
         safeDelete(message);
         try { await message.channel.send(`<@${userId}> nuh uh no no word`); } catch (error) { }
         return;
     }
 
-    // --- 2. Handle allowed users (ping pong, keywords) ---
     if (allowedUsers.has(userId)) {
         if (handlePingPongResponse(message, content)) return;
         const response = checkWordResponses(content);
@@ -557,13 +551,11 @@ client.on('messageCreate', async (message) => {
         return;
     }
 
-    // --- 3. Handle sleep muted users ---
     if (sleepMutedUsers.has(userId)) {
         safeDelete(message);
         return;
     }
 
-    // --- 4. Handle regular users not muted ---
     if (!mutedUsers.has(userId)) {
         if (handlePingPongResponse(message, content)) return;
         const response = checkWordResponses(content);
@@ -574,7 +566,6 @@ client.on('messageCreate', async (message) => {
         return;
     }
 
-    // --- 5. Handle muted users with challenges ---
     const challenge = activeChallenges.get(userId);
     const freeSpeechTimer = freeSpeechTimers.get(userId);
     if (freeSpeechTimer) return;
