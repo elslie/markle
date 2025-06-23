@@ -5,7 +5,7 @@
 // ---- Imports and Setup ----
 import './keepAlive.js';
 import fs from 'fs';
-import path from 'path'; // <--- ADD THIS LINE
+import path from 'path';
 import express from 'express';
 import dotenv from 'dotenv';
 import { Client, GatewayIntentBits, Partials, REST, Routes, SlashCommandBuilder, EmbedBuilder, MessageFlags } from 'discord.js';
@@ -16,8 +16,6 @@ const TOKEN = process.env.TOKEN || process.env.DISCORD_TOKEN;
 const pingPongLeaderboard = new Map(); // userId -> highest exchanges
 
 // ---- LEADERBOARD SETUP ----
-import path from 'path'; // add this import if you haven't!
-
 const LEADERBOARD_FILE = path.resolve(process.cwd(), 'pingpong_leaderboard.json');
 console.log(`[Leaderboard] Using leaderboard file at: ${LEADERBOARD_FILE}`);
 
@@ -68,7 +66,6 @@ const saveOnExit = () => {
 };
 process.on('SIGINT', saveOnExit);
 process.on('SIGTERM', saveOnExit);
-
 
 if (!TOKEN) {
     console.error('❌ TOKEN (or DISCORD_TOKEN) is not set in environment variables');
@@ -156,35 +153,6 @@ const mutedUsers = new Set();
 const pingPongGames = new Map();
 const sleepMutedUsers = new Set();
 const tempUnmuteTimeouts = new Map();
-
-// Step 3: Add these functions below
-function loadLeaderboard() {
-    if (fs.existsSync(LEADERBOARD_FILE)) {
-        try {
-            const data = JSON.parse(fs.readFileSync(LEADERBOARD_FILE, 'utf8'));
-            for (const [userId, score] of Object.entries(data)) {
-                pingPongLeaderboard.set(userId, score);
-            }
-        } catch (err) {
-            console.error('Could not load leaderboard:', err);
-        }
-    }
-}
-
-function saveLeaderboard() {
-    try {
-        const data = Object.fromEntries(pingPongLeaderboard.entries());
-        fs.writeFileSync(LEADERBOARD_FILE, JSON.stringify(data, null, 2));
-    } catch (err) {
-        console.error('Could not save leaderboard:', err);
-    }
-}
-
-loadLeaderboard();
-
-setInterval(() => {
-    saveLeaderboard();
-}, 5 * 60 * 1000);
 
 // =============================================================================
 // UTILITY & MODERATION FUNCTIONS
