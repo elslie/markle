@@ -1,8 +1,3 @@
-// =============================================================================
-// DISCORD MODERATION BOT - MAIN CONFIGURATION (NO AI, NO TIMEZONES)
-// =============================================================================
-
-// ---- Imports and Setup ----
 import './keepAlive.js';
 import express from 'express';
 import dotenv from 'dotenv';
@@ -10,6 +5,8 @@ import Database from 'better-sqlite3';
 import { Client, GatewayIntentBits, Partials, REST, Routes, SlashCommandBuilder, EmbedBuilder, MessageFlags } from 'discord.js';
 
 dotenv.config();
+
+console.log('Bot process started at', new Date().toISOString());
 
 const TOKEN = process.env.TOKEN || process.env.DISCORD_TOKEN;
 const pingPongLeaderboard = new Map();
@@ -154,7 +151,7 @@ function safeDelete(message) {
                 await message.delete();
             }
         } catch (error) {
-            if (error.code !== 10008) { // Unknown Message error
+            if (error.code !== 10008) {
                 console.error('Delete fled:', error.message);
             }
         }
@@ -247,7 +244,7 @@ function checkWordResponses(content) {
 }
 
 // =============================================================================
-// PING PONG GAME FUNCTIONS (ALTERNATING VERSION)
+// PING PONG GAME FUNCTIONS
 // =============================================================================
 
 function handlePingPongResponse(message, content) {
@@ -255,7 +252,6 @@ function handlePingPongResponse(message, content) {
     const lower = content.toLowerCase();
     const game = pingPongGames.get(userId);
 
-    // If no game, start one: user can start with "ping" or "pong"
     if (!game) {
         if (lower === 'ping' || lower === 'pong') {
             const botWord = lower === 'ping' ? 'pong' : 'ping';
@@ -266,7 +262,6 @@ function handlePingPongResponse(message, content) {
         return false;
     }
 
-    // User must respond with the expected word
     if (lower === game.expectedWord) {
         clearTimeout(game.timeout);
         const newExchanges = game.exchanges + 1;
@@ -507,7 +502,7 @@ client.on('interactionCreate', async interaction => {
                 .sort((a, b) => b[1] - a[1])
                 .slice(0, 10);
 
-            await interaction.deferReply(); // DEFER IMMEDIATELY!
+            await interaction.deferReply();
 
             if (top.length === 0) {
                 await interaction.editReply('No ping pong games played yet!');
@@ -536,7 +531,7 @@ client.on('interactionCreate', async interaction => {
 });
 
 // =============================================================================
-// MAIN MESSAGE PROCESSING LOGIC (NO AI, NO TIMEZONES)
+// MAIN MESSAGE PROCESSING LOGIC
 // =============================================================================
 client.on('messageCreate', async (message) => {
     if (message.author.bot || !message.guild) return;
@@ -559,6 +554,7 @@ client.on('messageCreate', async (message) => {
             try { await message.channel.send(response); } catch (error) { }
             return;
         }
+        return;
     }
 
     // --- 3. Handle sleep muted users ---
