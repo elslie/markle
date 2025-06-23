@@ -154,8 +154,6 @@ const pingPongGames = new Map();
 const sleepMutedUsers = new Set();
 const tempUnmuteTimeouts = new Map();
 
-const LEADERBOARD_FILE = './pingpong_leaderboard.json';
-
 // Step 3: Add these functions below
 function loadLeaderboard() {
     if (fs.existsSync(LEADERBOARD_FILE)) {
