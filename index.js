@@ -16,6 +16,8 @@ const TOKEN = process.env.TOKEN || process.env.DISCORD_TOKEN;
 const pingPongLeaderboard = new Map(); // userId -> highest exchanges
 
 // ---- LEADERBOARD SETUP ----
+import path from 'path'; // add this import if you haven't!
+
 const LEADERBOARD_FILE = path.resolve(process.cwd(), 'pingpong_leaderboard.json');
 console.log(`[Leaderboard] Using leaderboard file at: ${LEADERBOARD_FILE}`);
 
