@@ -68,6 +68,7 @@ const wordResponses = {
     'pls sleep': 'fr',
     'good morning': 'good morning{!}',
     'lelll🤑': 'get a load of this guy lmao', 'lelll 🤑': 'get a load of this guy lmao',
+    '...': '...'
 };
 
 const multiWordResponses = new Map([
