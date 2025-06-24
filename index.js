@@ -104,8 +104,8 @@ const wordResponses = {
     'markle u seeing this': 'yeah ts is crazy', 'markle r u seeing this': 'yeah ts is crazy', 'markle you seeing this': 'yeah ts is crazy', 'markle are you seeing this': 'yeah ts is crazy',
     'pls sleep': 'fr',
     'good morning': 'good morning{!}',
-    'lelll🤑': 'get a load of this guy lmao', 'lelll 🤑': 'get a load of this guy lmao',
-    '...': '...'
+    '...': '...',
+    'oleje': 'oleje'
 };
 
 const multiWordResponses = new Map([
