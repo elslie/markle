@@ -28,7 +28,7 @@ async function loadLeaderboard() {
     pingPongLeaderboard.clear();
     const res = await pool.query('SELECT userId, score FROM leaderboard');
     res.rows.forEach(row => {
-        pingPongLeaderboard.set(row.userId, row.score);
+        if (row.userId) pingPongLeaderboard.set(row.userId, row.score);
     });
     console.log(`[Leaderboard] Loaded ${pingPongLeaderboard.size} entries from database.`);
 }
@@ -73,6 +73,7 @@ if (!TOKEN) {
     process.exit(1);
 }
 
+// ---- Express Keep-Alive ----
 const app = express();
 app.get('/', (req, res) => {
     const uptime = Math.floor(process.uptime());
@@ -287,8 +288,7 @@ function handlePingPongResponse(message, content) {
                 saveLeaderboard();
             }
         }
-
-        // FIX: ONLY send ping/pong in startPingPongGame
+        // Only send ping/pong in startPingPongGame
         startPingPongGame(message.channel, userId, nextWord, newExchanges);
         return true;
     }
@@ -382,4 +382,278 @@ setInterval(async () => {
 // =============================================================================
 // SLASH COMMANDS AND STARTUP
 // =============================================================================
-// ... (rest of your code remains unchanged)
+client.once('ready', async () => {
+    console.log(`✅ Logged in as ${client.user.tag}!`);
+
+    // Ensure leaderboard table and load leaderboard on bot startup
+    await initLeaderboardTable();
+    await loadLeaderboard();
+
+    setInterval(async () => {
+        try {
+            const channel = await client.channels.fetch(TEST_CHANNEL_ID).catch(() => null);
+            if (!channel || !channel.isTextBased()) return;
+            const msg = await channel.send('✅ Still alive');
+            setTimeout(() => safeDelete(msg), 5000);
+        } catch (error) { }
+    }, KEEP_ALIVE_INTERVAL);
+
+    const commands = [
+        new SlashCommandBuilder()
+            .setName('mute')
+            .setDescription('Start a counting challenge for a user')
+            .addUserOption(opt => opt.setName('user').setDescription('User to challenge').setRequired(true))
+            .addIntegerOption(opt => opt.setName('duration').setDescription('Mute duration in seconds (default: 30)').setRequired(false).setMinValue(10).setMaxValue(3600)),
+        new SlashCommandBuilder()
+            .setName('unmute')
+            .setDescription('Cancel a user\'s challenge or sleep mute')
+            .addUserOption(opt => opt.setName('user').setDescription('User to release').setRequired(true))
+            .addBooleanOption(opt => opt.setName('temporary').setDescription('Temporary unmute for 15 minutes (default: false)').setRequired(false)),
+        new SlashCommandBuilder()
+            .setName('sleep')
+            .setDescription('Put a user to sleep - complete silence with no way to speak')
+            .addUserOption(opt => opt.setName('user').setDescription('User to put to sleep').setRequired(true)),
+        new SlashCommandBuilder()
+            .setName('status')
+            .setDescription('Show bot status and active challenges'),
+        new SlashCommandBuilder()
+            .setName('pingpongleaderboard')
+            .setDescription('Show the top 10 longest ping pong streaks')
+    ].map(cmd => cmd.toJSON());
+
+    const rest = new REST({ version: '10' }).setToken(TOKEN);
+
+    try {
+        const appData = await rest.get(Routes.oauth2CurrentApplication());
+        await rest.put(Routes.applicationCommands(appData.id), { body: commands });
+        console.log('✅ Slash commands registered successfully');
+    } catch (error) {
+        console.error('❌ Slash command registration failed:', error);
+    }
+});
+
+// =============================================================================
+// SLASH COMMAND HANDLER
+// =============================================================================
+client.removeAllListeners('interactionCreate');
+client.on('interactionCreate', async interaction => {
+    if (!interaction.isChatInputCommand()) return;
+
+    try {
+        if (
+            ['mute', 'unmute', 'sleep'].includes(interaction.commandName) &&
+            !allowedSlashCommandUsers.has(interaction.user.id)
+        ) {
+            return interaction.reply({
+                content: '❌ You are not authorized to use this command.',
+                flags: MessageFlags.Ephemeral
+            });
+        }
+
+        if (interaction.commandName === 'mute') {
+            const user = interaction.options.getUser('user');
+            const duration = interaction.options.getInteger('duration') || 30;
+            const channel = interaction.channel;
+
+            clearUserState(user.id);
+            await sendChallenge(channel, user.id);
+
+            const timeout = setTimeout(() => {
+                clearUserState(user.id);
+                channel.send(`<@${user.id}> has been automatically unmuted (time expired).`);
+            }, duration * 1000);
+
+            muteTimeouts.set(user.id, timeout);
+            await interaction.reply({
+                content: `✅ Challenge started for <@${user.id}> (Duration: ${duration}s)`,
+                flags: MessageFlags.Ephemeral
+            });
+        } else if (interaction.commandName === 'sleep') {
+            const user = interaction.options.getUser('user');
+            const channel = interaction.channel;
+            clearUserState(user.id);
+            sleepMutedUsers.add(user.id);
+            await channel.send(`go to sleep <@${user.id}>`);
+            await interaction.reply({
+                content: `😴 <@${user.id}> has been put to sleep (permanent mute until manually unmuted)`,
+                flags: MessageFlags.Ephemeral
+            });
+        } else if (interaction.commandName === 'unmute') {
+            const user = interaction.options.getUser('user');
+            const temporary = interaction.options.getBoolean('temporary') || false;
+            const channel = interaction.channel;
+            if (temporary && sleepMutedUsers.has(user.id)) {
+                sleepMutedUsers.delete(user.id);
+                const timeout = setTimeout(() => {
+                    sleepMutedUsers.add(user.id);
+                    channel.send(`<@${user.id}> temporary unmute expired - go back to sleep`);
+                }, TEMP_UNMUTE_DURATION);
+                tempUnmuteTimeouts.set(user.id, timeout);
+                await interaction.reply({
+                    content: `⏰ <@${user.id}> temporarily unmuted for 15 minutes`,
+                    flags: MessageFlags.Ephemeral
+                });
+            } else {
+                clearUserState(user.id);
+                await interaction.reply({
+                    content: `✅ <@${user.id}> has been completely unmuted`,
+                    flags: MessageFlags.Ephemeral
+                });
+            }
+        } else if (interaction.commandName === 'status') {
+            const embed = new EmbedBuilder()
+                .setTitle('🤖 Bot Status')
+                .setColor(0x00ff00)
+                .addFields(
+                    { name: 'Active Challenges', value: activeChallenges.size.toString(), inline: true },
+                    { name: 'Muted Users', value: mutedUsers.size.toString(), inline: true },
+                    { name: 'Sleep Muted Users', value: sleepMutedUsers.size.toString(), inline: true },
+                    { name: 'Free Speech Timers', value: freeSpeechTimers.size.toString(), inline: true },
+                    { name: 'Ping-Pong Games', value: pingPongGames.size.toString(), inline: true },
+                    { name: 'Delete Queue', value: deleteQueue.length.toString(), inline: true },
+                    { name: 'Temp Unmute Timers', value: tempUnmuteTimeouts.size.toString(), inline: true }
+                )
+                .setTimestamp();
+            await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
+        } else if (interaction.commandName === 'pingpongleaderboard') {
+            const top = [...pingPongLeaderboard.entries()]
+                .sort((a, b) => b[1] - a[1])
+                .slice(0, 10);
+
+            await interaction.deferReply();
+
+            if (top.length === 0) {
+                await interaction.editReply('No ping pong games played yet!');
+            } else {
+                const leaderboard = await Promise.all(top.map(async ([userId, score], idx) => {
+                    let username;
+                    try {
+                        const user = await client.users.fetch(userId);
+                        username = user.tag;
+                    } catch {
+                        username = `Unknown (${userId})`;
+                    }
+                    return `${idx + 1}. ${username}: ${score}`;
+                }));
+                await interaction.editReply({
+                    content: `🏓 **Ping Pong Leaderboard** 🏓\n${leaderboard.join('\n')}`
+                });
+            }
+        }
+    } catch (error) {
+        try {
+            if (interaction.deferred || interaction.replied) {
+                await interaction.editReply({ content: '❌ An error occurred while processing the command.', flags: MessageFlags.Ephemeral });
+            } else {
+                await interaction.reply({ content: '❌ An error occurred while processing the command.', flags: MessageFlags.Ephemeral });
+            }
+        } catch (e) {
+            console.error('Failed to send error message to interaction:', e);
+        }
+        console.error('Discord slash command error:', error);
+    }
+});
+
+client.removeAllListeners('messageCreate');
+client.on('messageCreate', async (message) => {
+    // Diagnostic logging
+    // console.log(`[DEBUG] Message from ${message.author.id}: ${message.content}`);
+
+    if (message.author.bot || !message.guild) return;
+
+    const userId = message.author.id;
+    const content = message.content.trim();
+
+    if (containsBannedWord(content)) {
+        safeDelete(message);
+        try { await message.channel.send(`<@${userId}> nuh uh no no word`); } catch (error) { }
+        return;
+    }
+
+    let handled = false;
+
+    if (allowedUsers.has(userId)) {
+        if (handlePingPongResponse(message, content)) {
+            handled = true;
+        } else {
+            const response = checkWordResponses(content);
+            if (response) {
+                try { await message.channel.send(response); } catch (error) { }
+                handled = true;
+            }
+        }
+        if (handled) return;
+    }
+
+    if (sleepMutedUsers.has(userId)) {
+        safeDelete(message);
+        return;
+    }
+
+    if (!mutedUsers.has(userId)) {
+        if (handlePingPongResponse(message, content)) {
+            handled = true;
+        } else {
+            const response = checkWordResponses(content);
+            if (response) {
+                try { await message.channel.send(response); } catch (error) { }
+                handled = true;
+            }
+        }
+        if (handled) return;
+        // DO NOT return here! Let non-muted users be able to play ping pong and get responses.
+        return;
+    }
+
+    // --- Only the code BELOW runs if the user IS muted! ---
+    const challenge = activeChallenges.get(userId);
+    const freeSpeechTimer = freeSpeechTimers.get(userId);
+    if (freeSpeechTimer) return;
+    if (challenge?.state === 'solved') {
+        if (Math.random() < 0.2) {
+            await startFreeSpeechCountdown(message.channel, userId);
+            await message.channel.send(`<@${userId}> congrats u now have temporary free speech`);
+        }
+        activeChallenges.delete(userId);
+        return;
+    }
+    safeDelete(message);
+    if (challenge?.state === 'waiting') {
+        const guess = parseInt(content, 10);
+        if (!isNaN(guess) && guess === challenge.answer) {
+            await message.channel.send(`<@${userId}> good boy`);
+            activeChallenges.set(userId, { state: 'solved' });
+        } else {
+            await message.channel.send(`<@${userId}> nuh uh, try again`);
+            await sendChallenge(message.channel, userId, false);
+        }
+        return;
+    }
+    await sendChallenge(message.channel, userId, true);
+});
+
+client.on('error', error => console.error('Discord client error:', error));
+client.on('warn', warning => console.warn('Discord client warning:', warning));
+process.on('unhandledRejection', error => console.error('Unhandled promise rejection:', error));
+process.on('uncaughtException', error => {
+    console.error('Uncaught exception:', error);
+    process.exit(1);
+});
+process.on('SIGINT', () => {
+    console.log('Shutting down gracefully...');
+    client.destroy();
+    process.exit(0);
+});
+
+client.login(TOKEN).catch(error => {
+    console.error('Failed to login:', error);
+    process.exit(1);
+});
+
+/*
+===============================================================================
+NOTE: If you deploy to Render, Heroku, Vercel, or similar, the leaderboard file
+      will NOT persist between deploys/restarts. Use a real database for
+      production storage!
+===============================================================================
+*/
