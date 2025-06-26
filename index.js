@@ -564,14 +564,20 @@ client.on('messageCreate', async (message) => {
         return;
     }
 
+    // Only one automatic response per message:
+    let handled = false;
+
     if (allowedUsers.has(userId)) {
-        if (handlePingPongResponse(message, content)) return;
-        const response = checkWordResponses(content);
-        if (response) {
-            try { await message.channel.send(response); } catch (error) { }
-            return;
+        if (handlePingPongResponse(message, content)) {
+            handled = true;
+        } else {
+            const response = checkWordResponses(content);
+            if (response) {
+                try { await message.channel.send(response); } catch (error) { }
+                handled = true;
+            }
         }
-        return;
+        if (handled) return;
     }
 
     if (sleepMutedUsers.has(userId)) {
@@ -580,13 +586,16 @@ client.on('messageCreate', async (message) => {
     }
 
     if (!mutedUsers.has(userId)) {
-        if (handlePingPongResponse(message, content)) return;
-        const response = checkWordResponses(content);
-        if (response) {
-            try { await message.channel.send(response); } catch (error) { }
-            return;
+        if (handlePingPongResponse(message, content)) {
+            handled = true;
+        } else {
+            const response = checkWordResponses(content);
+            if (response) {
+                try { await message.channel.send(response); } catch (error) { }
+                handled = true;
+            }
         }
-        return;
+        if (handled) return;
     }
 
     const challenge = activeChallenges.get(userId);
