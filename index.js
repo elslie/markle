@@ -263,7 +263,7 @@ function handlePingPongResponse(message, content) {
 
     if (!game) {
         if (lower === 'ping' || lower === 'pong') {
-            const botWord = lower === 'ping' ? 'pong' : 'ping';
+            const botWord = Math.random() < 0.5 ? 'ping' : 'pong';
             message.channel.send(`<@${userId}> ${botWord}`);
             startPingPongGame(message.channel, userId, botWord, 1);
             return true;
@@ -274,7 +274,7 @@ function handlePingPongResponse(message, content) {
     if (lower === game.expectedWord) {
         clearTimeout(game.timeout);
         const newExchanges = game.exchanges + 1;
-        const nextWord = game.expectedWord === 'ping' ? 'pong' : 'ping';
+        const nextWord = Math.random() < 0.5 ? 'ping' : 'pong';
 
         if (newExchanges % PING_PONG_WIN_THRESHOLD === 0) {
             message.channel.send(`<@${userId}> wow you actually won the ping pong game! 🏆 (${newExchanges} exchanges)`);
