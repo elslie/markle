@@ -1,7 +1,7 @@
 import './keepAlive.js';
 import express from 'express';
 import dotenv from 'dotenv';
-import Database from 'better-sqlite3';
+import pkg from 'pg';
 import { Client, GatewayIntentBits, Partials, REST, Routes, SlashCommandBuilder, EmbedBuilder, MessageFlags } from 'discord.js';
 
 dotenv.config();
@@ -11,42 +11,54 @@ console.log('=== Markle Bot starting up at', new Date().toISOString());
 const TOKEN = process.env.TOKEN || process.env.DISCORD_TOKEN;
 const pingPongLeaderboard = new Map();
 
-const db = new Database('leaderboard.db');
-db.prepare(`
-  CREATE TABLE IF NOT EXISTS leaderboard (
-    userId TEXT PRIMARY KEY,
-    score INTEGER NOT NULL
-  )
-`).run();
+// ----------- POSTGRESQL SETUP -----------
+const { Pool } = pkg;
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
-function loadLeaderboard() {
+async function initLeaderboardTable() {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS leaderboard (
+        userId TEXT PRIMARY KEY,
+        score INTEGER NOT NULL
+      )
+    `);
+}
+
+async function loadLeaderboard() {
     pingPongLeaderboard.clear();
-    for (const row of db.prepare('SELECT userId, score FROM leaderboard').all()) {
-        pingPongLeaderboard.set(row.userId, row.score);
-    }
+    const res = await pool.query('SELECT userId, score FROM leaderboard');
+    res.rows.forEach(row => {
+        pingPongLeaderboard.set(row.userid, row.score);
+    });
     console.log(`[Leaderboard] Loaded ${pingPongLeaderboard.size} entries from database.`);
 }
 
-function saveLeaderboard() {
-    const insert = db.prepare(
-        'INSERT INTO leaderboard (userId, score) VALUES (?, ?) ON CONFLICT(userId) DO UPDATE SET score=excluded.score'
-    );
-    for (const [userId, score] of pingPongLeaderboard.entries()) {
-        insert.run(userId, score);
+async function saveLeaderboard() {
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+        for (const [userId, score] of pingPongLeaderboard.entries()) {
+            await client.query(
+                'INSERT INTO leaderboard (userId, score) VALUES ($1, $2) ON CONFLICT (userId) DO UPDATE SET score = EXCLUDED.score',
+                [userId, score]
+            );
+        }
+        await client.query('COMMIT');
+        console.log(`[Leaderboard] Saved ${pingPongLeaderboard.size} entries to database.`);
+    } catch (err) {
+        await client.query('ROLLBACK');
+        console.error('Error saving leaderboard:', err);
+    } finally {
+        client.release();
     }
-    console.log(`[Leaderboard] Saved ${pingPongLeaderboard.size} entries to database.`);
 }
 
-// Load on boot
-loadLeaderboard();
-
 // Save every 5 minutes
-setInterval(saveLeaderboard, 5 * 60 * 1000);
+setInterval(() => saveLeaderboard(), 5 * 60 * 1000);
 
 const saveOnExit = () => {
     console.log('[Leaderboard] Saving leaderboard before exit...');
-    saveLeaderboard();
-    process.exit(0);
+    saveLeaderboard().finally(() => process.exit(0));
 };
 process.on('SIGINT', saveOnExit);
 process.on('SIGTERM', saveOnExit);
@@ -368,6 +380,10 @@ setInterval(async () => {
 // =============================================================================
 client.once('ready', async () => {
     console.log(`✅ Logged in as ${client.user.tag}!`);
+
+    // Ensure leaderboard table and load leaderboard on bot startup
+    await initLeaderboardTable();
+    await loadLeaderboard();
 
     setInterval(async () => {
         try {
