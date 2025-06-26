@@ -537,8 +537,15 @@ client.on('interactionCreate', async interaction => {
             }
         }
     } catch (error) {
-        if (!interaction.replied && !interaction.deferred) {
-            await interaction.reply({ content: '❌ An error occurred while processing the command.', flags: MessageFlags.Ephemeral });
+        try {
+            if (interaction.deferred || interaction.replied) {
+                await interaction.editReply({ content: '❌ An error occurred while processing the command.', flags: MessageFlags.Ephemeral });
+            } else {
+                await interaction.reply({ content: '❌ An error occurred while processing the command.', flags: MessageFlags.Ephemeral });
+            }
+        } catch (e) {
+            // Optionally log this error too
+            console.error('Failed to send error message to interaction:', e);
         }
         console.error('Discord slash command error:', error);
     }
