@@ -28,7 +28,7 @@ async function loadLeaderboard() {
     pingPongLeaderboard.clear();
     const res = await pool.query('SELECT userId, score FROM leaderboard');
     res.rows.forEach(row => {
-        pingPongLeaderboard.set(row.userid, row.score);
+        pingPongLeaderboard.set(row.userId, row.score); // FIXED typo
     });
     console.log(`[Leaderboard] Loaded ${pingPongLeaderboard.size} entries from database.`);
 }
@@ -253,7 +253,7 @@ function checkWordResponses(content) {
 }
 
 // =============================================================================
-// PING PONG GAME FUNCTIONS (ALTERNATING VERSION)
+// PING PONG GAME FUNCTIONS (RANDOM VERSION, SINGLE SEND)
 // =============================================================================
 
 function handlePingPongResponse(message, content) {
@@ -264,7 +264,6 @@ function handlePingPongResponse(message, content) {
     if (!game) {
         if (lower === 'ping' || lower === 'pong') {
             const botWord = Math.random() < 0.5 ? 'ping' : 'pong';
-            message.channel.send(`<@${userId}> ${botWord}`);
             startPingPongGame(message.channel, userId, botWord, 1);
             return true;
         }
@@ -285,7 +284,6 @@ function handlePingPongResponse(message, content) {
             }
         }
 
-        message.channel.send(`<@${userId}> ${nextWord}`);
         startPingPongGame(message.channel, userId, nextWord, newExchanges);
         return true;
     }
@@ -300,6 +298,7 @@ async function startPingPongGame(channel, userId, expectedWord = 'ping', exchang
     }
     const timeLimit = exchanges === 0 ? INITIAL_PING_PONG_TIME :
         Math.max(1000, INITIAL_PING_PONG_TIME * Math.pow(1 - TIME_REDUCTION_RATE, exchanges));
+    await channel.send(`<@${userId}> ${expectedWord}`); // Only send ping/pong ONCE here
     const timeout = setTimeout(async () => {
         try {
             const prev = pingPongLeaderboard.get(userId) || 0;
@@ -544,7 +543,6 @@ client.on('interactionCreate', async interaction => {
                 await interaction.reply({ content: '❌ An error occurred while processing the command.', flags: MessageFlags.Ephemeral });
             }
         } catch (e) {
-            // Optionally log this error too
             console.error('Failed to send error message to interaction:', e);
         }
         console.error('Discord slash command error:', error);
@@ -596,8 +594,11 @@ client.on('messageCreate', async (message) => {
             }
         }
         if (handled) return;
+        // FIX: If not muted, don't run challenge code below
+        return;
     }
 
+    // --- Only the code BELOW runs if the user IS muted! ---
     const challenge = activeChallenges.get(userId);
     const freeSpeechTimer = freeSpeechTimers.get(userId);
     if (freeSpeechTimer) return;
