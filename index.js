@@ -28,7 +28,7 @@ async function loadLeaderboard() {
     pingPongLeaderboard.clear();
     const res = await pool.query('SELECT userId, score FROM leaderboard');
     res.rows.forEach(row => {
-        pingPongLeaderboard.set(row.userId, row.score); // FIXED typo
+        pingPongLeaderboard.set(row.userId, row.score);
     });
     console.log(`[Leaderboard] Loaded ${pingPongLeaderboard.size} entries from database.`);
 }
@@ -53,6 +53,17 @@ async function saveLeaderboard() {
     }
 }
 
+// ---- RESET LEADERBOARD FUNCTION ----
+async function resetLeaderboard() {
+    pingPongLeaderboard.clear();
+    try {
+        await pool.query('TRUNCATE leaderboard');
+        console.log('[Leaderboard] Leaderboard has been reset.');
+    } catch (error) {
+        console.error('Error resetting leaderboard:', error);
+    }
+}
+
 // Save every 5 minutes
 setInterval(() => saveLeaderboard(), 5 * 60 * 1000);
 
@@ -68,7 +79,6 @@ if (!TOKEN) {
     process.exit(1);
 }
 
-// ---- Express Keep-Alive ----
 const app = express();
 app.get('/', (req, res) => {
     const uptime = Math.floor(process.uptime());
@@ -298,7 +308,7 @@ async function startPingPongGame(channel, userId, expectedWord = 'ping', exchang
     }
     const timeLimit = exchanges === 0 ? INITIAL_PING_PONG_TIME :
         Math.max(1000, INITIAL_PING_PONG_TIME * Math.pow(1 - TIME_REDUCTION_RATE, exchanges));
-    await channel.send(`<@${userId}> ${expectedWord}`); // Only send ping/pong ONCE here
+    await channel.send(`<@${userId}> ${expectedWord}`);
     const timeout = setTimeout(async () => {
         try {
             const prev = pingPongLeaderboard.get(userId) || 0;
@@ -413,7 +423,10 @@ client.once('ready', async () => {
             .setDescription('Show bot status and active challenges'),
         new SlashCommandBuilder()
             .setName('pingpongleaderboard')
-            .setDescription('Show the top 10 longest ping pong streaks')
+            .setDescription('Show the top 10 longest ping pong streaks'),
+        new SlashCommandBuilder()
+            .setName('resetleaderboard')
+            .setDescription('Resets the ping pong leaderboard (admin only)')
     ].map(cmd => cmd.toJSON());
 
     const rest = new REST({ version: '10' }).setToken(TOKEN);
@@ -435,6 +448,9 @@ client.on('interactionCreate', async interaction => {
     if (!interaction.isChatInputCommand()) return;
 
     try {
+        // You can restrict admin commands to a specific Discord ID
+        const adminId = 'YOUR_DISCORD_ID';
+
         if (
             ['mute', 'unmute', 'sleep'].includes(interaction.commandName) &&
             !allowedSlashCommandUsers.has(interaction.user.id)
@@ -534,6 +550,13 @@ client.on('interactionCreate', async interaction => {
                     content: `🏓 **Ping Pong Leaderboard** 🏓\n${leaderboard.join('\n')}`
                 });
             }
+        } else if (interaction.commandName === 'resetleaderboard') {
+            // Only allow the admin to reset
+            if (interaction.user.id !== adminId) {
+                return interaction.reply({ content: '❌ Not authorized.', flags: MessageFlags.Ephemeral });
+            }
+            await resetLeaderboard();
+            await interaction.reply({ content: '✅ Leaderboard has been reset.', flags: MessageFlags.Ephemeral });
         }
     } catch (error) {
         try {
@@ -594,7 +617,6 @@ client.on('messageCreate', async (message) => {
             }
         }
         if (handled) return;
-        // FIX: If not muted, don't run challenge code below
         return;
     }
 
@@ -625,9 +647,6 @@ client.on('messageCreate', async (message) => {
     await sendChallenge(message.channel, userId, true);
 });
 
-// =============================================================================
-// ERROR HANDLING AND SHUTDOWN
-// =============================================================================
 client.on('error', error => console.error('Discord client error:', error));
 client.on('warn', warning => console.warn('Discord client warning:', warning));
 process.on('unhandledRejection', error => console.error('Unhandled promise rejection:', error));
@@ -641,9 +660,6 @@ process.on('SIGINT', () => {
     process.exit(0);
 });
 
-// =============================================================================
-// BOT LOGIN
-// =============================================================================
 client.login(TOKEN).catch(error => {
     console.error('Failed to login:', error);
     process.exit(1);
