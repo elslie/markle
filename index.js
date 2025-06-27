@@ -3,6 +3,7 @@ import express from 'express';
 import dotenv from 'dotenv';
 import pkg from 'pg';
 import { Client, GatewayIntentBits, Partials, REST, Routes, SlashCommandBuilder, EmbedBuilder, MessageFlags } from 'discord.js';
+import { Octokit } from "@octokit/rest";
 
 dotenv.config();
 
@@ -21,11 +22,68 @@ console.log('=== Markle Bot starting up at', new Date().toISOString());
 
 const TOKEN = process.env.TOKEN || process.env.DISCORD_TOKEN;
 const pingPongLeaderboard = new Map();
+const octokit = new Octokit({ auth: process.env.GITHUB_TOKEN });
+const GITHUB_OWNER = "elslie";
+const GITHUB_REPO = "markle";
+const LEADERBOARD_PATH = "leaderboard.json";
+const DEFAULT_BRANCH = "main";
+
+// Save leaderboard to GitHub file
+async function saveLeaderboardToGitHub() {
+  const content = JSON.stringify([...pingPongLeaderboard.entries()], null, 2);
+  const contentEncoded = Buffer.from(content).toString("base64");
+
+  // Get SHA if file exists (required for update)
+  let sha;
+  try {
+    const { data } = await octokit.repos.getContent({
+      owner: GITHUB_OWNER,
+      repo: GITHUB_REPO,
+      path: LEADERBOARD_PATH,
+    });
+    sha = data.sha;
+  } catch (err) {
+    sha = undefined;
+  }
+
+  await octokit.repos.createOrUpdateFileContents({
+    owner: GITHUB_OWNER,
+    repo: GITHUB_REPO,
+    path: LEADERBOARD_PATH,
+    message: "Update ping pong leaderboard",
+    content: contentEncoded,
+    sha,
+    branch: DEFAULT_BRANCH,
+  });
+}
+
+// Load leaderboard from GitHub file
+async function loadLeaderboardFromGitHub() {
+  try {
+    const { data } = await octokit.repos.getContent({
+      owner: GITHUB_OWNER,
+      repo: GITHUB_REPO,
+      path: LEADERBOARD_PATH,
+      ref: DEFAULT_BRANCH,
+    });
+    const leaderboardRaw = Buffer.from(data.content, "base64").toString();
+    const leaderboardArr = JSON.parse(leaderboardRaw);
+    pingPongLeaderboard.clear();
+    for (const [userId, score] of leaderboardArr) {
+      pingPongLeaderboard.set(userId, score);
+    }
+    console.log(`[Leaderboard] Loaded ${pingPongLeaderboard.size} entries from GitHub file.`);
+  } catch (err) {
+    console.warn("[Leaderboard] No existing GitHub leaderboard file or error loading, starting fresh.");
+    pingPongLeaderboard.clear();
+  }
+}
 
 // ----------- POSTGRESQL SETUP -----------
 const { Pool } = pkg;
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
+/*
 async function initLeaderboardTable() {
     console.log('[DB] Ensuring leaderboard table exists...');
     await pool.query(`
@@ -77,14 +135,16 @@ async function saveLeaderboard() {
         client.release();
     }
 }
+*/
 
 // Save every 5 minutes
-setInterval(() => saveLeaderboard(), 5 * 60 * 1000);
+setInterval(() => saveLeaderboardToGitHub(), 5 * 60 * 1000);
 
 const saveOnExit = () => {
     console.log('[Leaderboard] Saving leaderboard before exit...');
-    saveLeaderboard().finally(() => process.exit(0));
+    saveLeaderboardToGitHub().finally(() => process.exit(0));
 };
+
 process.on('SIGINT', saveOnExit);
 process.on('SIGTERM', saveOnExit);
 
