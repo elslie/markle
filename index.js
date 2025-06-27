@@ -1,7 +1,6 @@
 import './keepAlive.js';
 import express from 'express';
 import dotenv from 'dotenv';
-import pkg from 'pg';
 import { Client, GatewayIntentBits, Partials, REST, Routes, SlashCommandBuilder, EmbedBuilder, MessageFlags } from 'discord.js';
 import { Octokit } from "@octokit/rest";
 
@@ -78,64 +77,6 @@ async function loadLeaderboardFromGitHub() {
     pingPongLeaderboard.clear();
   }
 }
-
-// ----------- POSTGRESQL SETUP -----------
-const { Pool } = pkg;
-const pool = new Pool({ connectionString: process.env.DATABASE_URL });
-
-/*
-async function initLeaderboardTable() {
-    console.log('[DB] Ensuring leaderboard table exists...');
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS leaderboard (
-        userId TEXT PRIMARY KEY,
-        score INTEGER NOT NULL
-      )
-    `);
-    console.log('[DB] Table check complete.');
-}
-
-async function loadLeaderboard() {
-    pingPongLeaderboard.clear();
-    console.log('[DB] Loading leaderboard...');
-    const res = await pool.query('SELECT userId, score FROM leaderboard');
-    res.rows.forEach(row => {
-        if (row.userId) pingPongLeaderboard.set(row.userId, row.score);
-    });
-    console.log(`[Leaderboard] Loaded ${pingPongLeaderboard.size} entries from database.`);
-    if (pingPongLeaderboard.size) {
-        for (const [userId, score] of pingPongLeaderboard.entries()) {
-            console.log(`[Leaderboard] ${userId}: ${score}`);
-        }
-    }
-}
-
-async function saveLeaderboard() {
-    const client = await pool.connect();
-    try {
-        await client.query('BEGIN');
-        console.log('[Leaderboard] Saving leaderboard to database...');
-        for (const [userId, score] of pingPongLeaderboard.entries()) {
-            if (!userId) {
-                console.error('[Leaderboard] Skipping entry with null/undefined userId');
-                continue;
-            }
-            console.log(`[Leaderboard] Saving: ${userId}: ${score}`);
-            await client.query(
-                'INSERT INTO leaderboard (userId, score) VALUES ($1, $2) ON CONFLICT (userId) DO UPDATE SET score = EXCLUDED.score',
-                [userId, score]
-            );
-        }
-        await client.query('COMMIT');
-        console.log(`[Leaderboard] Saved ${pingPongLeaderboard.size} entries to database.`);
-    } catch (err) {
-        await client.query('ROLLBACK');
-        console.error('Error saving leaderboard:', err);
-    } finally {
-        client.release();
-    }
-}
-*/
 
 // Save every 5 minutes
 setInterval(() => saveLeaderboardToGitHub(), 5 * 60 * 1000);
@@ -367,7 +308,7 @@ function handlePingPongResponse(message, content) {
             if (newExchanges > prev) {
                 console.log(`[Leaderboard] New high score for ${userId}: ${newExchanges} (prev: ${prev})`);
                 pingPongLeaderboard.set(userId, newExchanges);
-                saveLeaderboard();
+                saveLeaderboardToGitHub();
             }
         }
         startPingPongGame(message.channel, userId, nextWord, newExchanges);
@@ -395,7 +336,7 @@ async function startPingPongGame(channel, userId, expectedWord = 'ping', exchang
             if (exchanges > prev) {
                 console.log(`[Leaderboard] Timed out, new high score for ${userId}: ${exchanges} (prev: ${prev})`);
                 pingPongLeaderboard.set(userId, exchanges);
-                saveLeaderboard();
+                saveLeaderboardToGitHub();
             }
             try {
                 await channel.send(`ggwp <@${userId}>, you had ${exchanges} exchanges`);
@@ -498,8 +439,7 @@ setInterval(async () => {
 client.once('ready', async () => {
     console.log(`✅ Logged in as ${client.user.tag}!`);
 
-    await initLeaderboardTable();
-    await loadLeaderboard();
+    await loadLeaderboardFromGitHub();
 
     setInterval(async () => {
         try {
