@@ -110,18 +110,9 @@ const client = new Client({
   partials: [Partials.Channel]
 });
 
-// =============================================================================
-// GUARD AGAINST DUPLICATE LISTENERS
-// =============================================================================
-let listenersAdded = false;
-
 // Simple in-memory cache to avoid processing the same message/interaction twice
 const processedMessages = new Set();
 const processedInteractions = new Set();
-
-// =============================================================================
-// BOT CONFIGURATION AND VARIABLES
-// =============================================================================
 
 const bannedWords = ['yao', 'fag', 'retard', 'cunt', 'bashno', 'aoi'];
 const FREE_SPEECH_DURATION = 30 * 1000;
@@ -489,243 +480,240 @@ client.once('ready', async () => {
 });
 
 // =============================================================================
-// SLASH COMMAND & MESSAGE HANDLERS (GUARDED)
+// SLASH COMMAND & MESSAGE HANDLERS (NO GUARD, ATTACHED ONLY ONCE!)
 // =============================================================================
-if (!listenersAdded) {
-  listenersAdded = true;
 
-  client.on('interactionCreate', async interaction => {
-    // Prevent duplicate interactions
-    if (processedInteractions.has(interaction.id)) return;
-    processedInteractions.add(interaction.id);
+client.on('interactionCreate', async interaction => {
+  // Prevent duplicate interactions
+  if (processedInteractions.has(interaction.id)) return;
+  processedInteractions.add(interaction.id);
 
-    if (!interaction.isChatInputCommand()) return;
+  if (!interaction.isChatInputCommand()) return;
 
-    try {
-      if (
-        ['mute', 'unmute', 'sleep'].includes(interaction.commandName) &&
-        !allowedSlashCommandUsers.has(interaction.user.id)
-      ) {
-        return interaction.reply({
-          content: '❌ You are not authorized to use this command.',
-          flags: MessageFlags.Ephemeral
-        });
-      }
-
-      if (interaction.commandName === 'mute') {
-        const user = interaction.options.getUser('user');
-        const duration = interaction.options.getInteger('duration') || 30;
-        const channel = interaction.channel;
-
-        clearUserState(user.id);
-        await sendChallenge(channel, user.id);
-
-        const timeout = setTimeout(() => {
-          clearUserState(user.id);
-          channel.send(`<@${user.id}> has been automatically unmuted (time expired).`)
-            .catch(error => console.error('Failed to send unmute message:', error));
-        }, duration * 1000);
-
-        muteTimeouts.set(user.id, timeout);
-        await interaction.reply({
-          content: `✅ Challenge started for <@${user.id}> (Duration: ${duration}s)`,
-          flags: MessageFlags.Ephemeral
-        });
-      } else if (interaction.commandName === 'sleep') {
-        const user = interaction.options.getUser('user');
-        const channel = interaction.channel;
-        clearUserState(user.id);
-        sleepMutedUsers.add(user.id);
-        try {
-          await channel.send(`go to sleep <@${user.id}>`);
-        } catch (error) {
-          console.error('Failed to send sleep message:', error);
-        }
-        await interaction.reply({
-          content: `😴 <@${user.id}> has been put to sleep (permanent mute until manually unmuted)`,
-          flags: MessageFlags.Ephemeral
-        });
-      } else if (interaction.commandName === 'unmute') {
-        const user = interaction.options.getUser('user');
-        const temporary = interaction.options.getBoolean('temporary') || false;
-        const channel = interaction.channel;
-        if (temporary && sleepMutedUsers.has(user.id)) {
-          sleepMutedUsers.delete(user.id);
-          const timeout = setTimeout(() => {
-            sleepMutedUsers.add(user.id);
-            channel.send(`<@${user.id}> temporary unmute expired - go back to sleep`)
-              .catch(error => console.error('Failed to send temp remute message:', error));
-          }, TEMP_UNMUTE_DURATION);
-          tempUnmuteTimeouts.set(user.id, timeout);
-          await interaction.reply({
-            content: `⏰ <@${user.id}> temporarily unmuted for 15 minutes`,
-            flags: MessageFlags.Ephemeral
-          });
-        } else {
-          clearUserState(user.id);
-          await interaction.reply({
-            content: `✅ <@${user.id}> has been completely unmuted`,
-            flags: MessageFlags.Ephemeral
-          });
-        }
-      } else if (interaction.commandName === 'status') {
-        const embed = new EmbedBuilder()
-          .setTitle('🤖 Bot Status')
-          .setColor(0x00ff00)
-          .addFields(
-            { name: 'Active Challenges', value: activeChallenges.size.toString(), inline: true },
-            { name: 'Muted Users', value: mutedUsers.size.toString(), inline: true },
-            { name: 'Sleep Muted Users', value: sleepMutedUsers.size.toString(), inline: true },
-            { name: 'Free Speech Timers', value: freeSpeechTimers.size.toString(), inline: true },
-            { name: 'Ping-Pong Games', value: pingPongGames.size.toString(), inline: true },
-            { name: 'Delete Queue', value: deleteQueue.length.toString(), inline: true },
-            { name: 'Temp Unmute Timers', value: tempUnmuteTimeouts.size.toString(), inline: true }
-          )
-          .setTimestamp();
-        await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
-      } else if (interaction.commandName === 'pingpongleaderboard') {
-        const top = [...pingPongLeaderboard.entries()]
-          .sort((a, b) => b[1] - a[1])
-          .slice(0, 10);
-
-        await interaction.deferReply();
-
-        if (top.length === 0) {
-          await interaction.editReply('No ping pong games played yet!');
-        } else {
-          const leaderboard = await Promise.all(top.map(async ([userId, score], idx) => {
-            let username;
-            try {
-              const user = await client.users.fetch(userId);
-              username = user.tag;
-            } catch {
-              username = `Unknown (${userId})`;
-            }
-            return `${idx + 1}. ${username}: ${score}`;
-          }));
-          await interaction.editReply({
-            content: `🏓 **Ping Pong Leaderboard** 🏓\n${leaderboard.join('\n')}`
-          });
-        }
-      }
-    } catch (error) {
-      try {
-        if (interaction.deferred || interaction.replied) {
-          await interaction.editReply({ content: '❌ An error occurred while processing the command.', flags: MessageFlags.Ephemeral });
-        } else {
-          await interaction.reply({ content: '❌ An error occurred while processing the command.', flags: MessageFlags.Ephemeral });
-        }
-      } catch (e) {
-        console.error('Failed to send error message to interaction:', e);
-      }
-      console.error('Discord slash command error:', error);
+  try {
+    if (
+      ['mute', 'unmute', 'sleep'].includes(interaction.commandName) &&
+      !allowedSlashCommandUsers.has(interaction.user.id)
+    ) {
+      return interaction.reply({
+        content: '❌ You are not authorized to use this command.',
+        flags: MessageFlags.Ephemeral
+      });
     }
-  });
 
-  client.on('messageCreate', async (message) => {
-    // Prevent duplicate message processing
-    if (processedMessages.has(message.id)) return;
-    processedMessages.add(message.id);
+    if (interaction.commandName === 'mute') {
+      const user = interaction.options.getUser('user');
+      const duration = interaction.options.getInteger('duration') || 30;
+      const channel = interaction.channel;
 
-    if (message.author.bot || !message.guild) return;
+      clearUserState(user.id);
+      await sendChallenge(channel, user.id);
 
-    const userId = message.author.id;
-    const content = message.content.trim();
+      const timeout = setTimeout(() => {
+        clearUserState(user.id);
+        channel.send(`<@${user.id}> has been automatically unmuted (time expired).`)
+          .catch(error => console.error('Failed to send unmute message:', error));
+      }, duration * 1000);
 
-    if (containsBannedWord(content)) {
-      safeDelete(message);
+      muteTimeouts.set(user.id, timeout);
+      await interaction.reply({
+        content: `✅ Challenge started for <@${user.id}> (Duration: ${duration}s)`,
+        flags: MessageFlags.Ephemeral
+      });
+    } else if (interaction.commandName === 'sleep') {
+      const user = interaction.options.getUser('user');
+      const channel = interaction.channel;
+      clearUserState(user.id);
+      sleepMutedUsers.add(user.id);
       try {
-        await message.channel.send(`<@${userId}> nuh uh no no word`);
+        await channel.send(`go to sleep <@${user.id}>`);
       } catch (error) {
-        console.error('Failed to send banned word message:', error);
+        console.error('Failed to send sleep message:', error);
       }
-      return;
-    }
-
-    let handled = false;
-
-    if (allowedUsers.has(userId)) {
-      if (await handlePingPongResponse(message, content)) {
-        handled = true;
+      await interaction.reply({
+        content: `😴 <@${user.id}> has been put to sleep (permanent mute until manually unmuted)`,
+        flags: MessageFlags.Ephemeral
+      });
+    } else if (interaction.commandName === 'unmute') {
+      const user = interaction.options.getUser('user');
+      const temporary = interaction.options.getBoolean('temporary') || false;
+      const channel = interaction.channel;
+      if (temporary && sleepMutedUsers.has(user.id)) {
+        sleepMutedUsers.delete(user.id);
+        const timeout = setTimeout(() => {
+          sleepMutedUsers.add(user.id);
+          channel.send(`<@${user.id}> temporary unmute expired - go back to sleep`)
+            .catch(error => console.error('Failed to send temp remute message:', error));
+        }, TEMP_UNMUTE_DURATION);
+        tempUnmuteTimeouts.set(user.id, timeout);
+        await interaction.reply({
+          content: `⏰ <@${user.id}> temporarily unmuted for 15 minutes`,
+          flags: MessageFlags.Ephemeral
+        });
       } else {
-        const response = checkWordResponses(content);
-        if (response) {
-          try {
-            await message.channel.send(response);
-          } catch (error) {
-            console.error('Failed to send allowed user response:', error);
-          }
-          handled = true;
-        }
+        clearUserState(user.id);
+        await interaction.reply({
+          content: `✅ <@${user.id}> has been completely unmuted`,
+          flags: MessageFlags.Ephemeral
+        });
       }
-      if (handled) return;
-    }
+    } else if (interaction.commandName === 'status') {
+      const embed = new EmbedBuilder()
+        .setTitle('🤖 Bot Status')
+        .setColor(0x00ff00)
+        .addFields(
+          { name: 'Active Challenges', value: activeChallenges.size.toString(), inline: true },
+          { name: 'Muted Users', value: mutedUsers.size.toString(), inline: true },
+          { name: 'Sleep Muted Users', value: sleepMutedUsers.size.toString(), inline: true },
+          { name: 'Free Speech Timers', value: freeSpeechTimers.size.toString(), inline: true },
+          { name: 'Ping-Pong Games', value: pingPongGames.size.toString(), inline: true },
+          { name: 'Delete Queue', value: deleteQueue.length.toString(), inline: true },
+          { name: 'Temp Unmute Timers', value: tempUnmuteTimeouts.size.toString(), inline: true }
+        )
+        .setTimestamp();
+      await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
+    } else if (interaction.commandName === 'pingpongleaderboard') {
+      const top = [...pingPongLeaderboard.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 10);
 
-    if (sleepMutedUsers.has(userId)) {
-      safeDelete(message);
-      return;
-    }
+      await interaction.deferReply();
 
-    if (!mutedUsers.has(userId)) {
-      if (await handlePingPongResponse(message, content)) {
-        handled = true;
+      if (top.length === 0) {
+        await interaction.editReply('No ping pong games played yet!');
       } else {
-        const response = checkWordResponses(content);
-        if (response) {
+        const leaderboard = await Promise.all(top.map(async ([userId, score], idx) => {
+          let username;
           try {
-            await message.channel.send(response);
-          } catch (error) {
-            console.error('Failed to send unmuted user response:', error);
+            const user = await client.users.fetch(userId);
+            username = user.tag;
+          } catch {
+            username = `Unknown (${userId})`;
           }
-          handled = true;
-        }
+          return `${idx + 1}. ${username}: ${score}`;
+        }));
+        await interaction.editReply({
+          content: `🏓 **Ping Pong Leaderboard** 🏓\n${leaderboard.join('\n')}`
+        });
       }
-      if (handled) return;
-      return;
     }
+  } catch (error) {
+    try {
+      if (interaction.deferred || interaction.replied) {
+        await interaction.editReply({ content: '❌ An error occurred while processing the command.', flags: MessageFlags.Ephemeral });
+      } else {
+        await interaction.reply({ content: '❌ An error occurred while processing the command.', flags: MessageFlags.Ephemeral });
+      }
+    } catch (e) {
+      console.error('Failed to send error message to interaction:', e);
+    }
+    console.error('Discord slash command error:', error);
+  }
+});
 
-    // --- Only the code BELOW runs if the user IS muted! ---
-    const challenge = activeChallenges.get(userId);
-    const freeSpeechTimer = freeSpeechTimers.get(userId);
-    if (freeSpeechTimer) return;
-    if (challenge?.state === 'solved') {
-      if (Math.random() < 0.2) {
-        await startFreeSpeechCountdown(message.channel, userId);
-        try {
-          await message.channel.send(`<@${userId}> congrats u now have temporary free speech`);
-        } catch (error) {
-          console.error('Failed to send temporary free speech message:', error);
-        }
-      }
-      activeChallenges.delete(userId);
-      return;
-    }
+client.on('messageCreate', async (message) => {
+  // Prevent duplicate message processing
+  if (processedMessages.has(message.id)) return;
+  processedMessages.add(message.id);
+
+  if (message.author.bot || !message.guild) return;
+
+  const userId = message.author.id;
+  const content = message.content.trim();
+
+  if (containsBannedWord(content)) {
     safeDelete(message);
-    if (challenge?.state === 'waiting') {
-      const guess = parseInt(content, 10);
-      if (!isNaN(guess) && guess === challenge.answer) {
-        try {
-          await message.channel.send(`<@${userId}> good boy`);
-        } catch (error) {
-          console.error('Failed to send good boy message:', error);
-        }
-        activeChallenges.set(userId, { state: 'solved' });
-      } else {
-        try {
-          await message.channel.send(`<@${userId}> nuh uh, try again`);
-        } catch (error) {
-          console.error('Failed to send try again message:', error);
-        }
-        await sendChallenge(message.channel, userId, false);
-      }
-      return;
+    try {
+      await message.channel.send(`<@${userId}> nuh uh no no word`);
+    } catch (error) {
+      console.error('Failed to send banned word message:', error);
     }
-    await sendChallenge(message.channel, userId, true);
-  });
+    return;
+  }
 
-  client.on('error', error => console.error('Discord client error:', error));
-  client.on('warn', warning => console.warn('Discord client warning:', warning));
-}
+  let handled = false;
+
+  if (allowedUsers.has(userId)) {
+    if (await handlePingPongResponse(message, content)) {
+      handled = true;
+    } else {
+      const response = checkWordResponses(content);
+      if (response) {
+        try {
+          await message.channel.send(response);
+        } catch (error) {
+          console.error('Failed to send allowed user response:', error);
+        }
+        handled = true;
+      }
+    }
+    if (handled) return;
+  }
+
+  if (sleepMutedUsers.has(userId)) {
+    safeDelete(message);
+    return;
+  }
+
+  if (!mutedUsers.has(userId)) {
+    if (await handlePingPongResponse(message, content)) {
+      handled = true;
+    } else {
+      const response = checkWordResponses(content);
+      if (response) {
+        try {
+          await message.channel.send(response);
+        } catch (error) {
+          console.error('Failed to send unmuted user response:', error);
+        }
+        handled = true;
+      }
+    }
+    if (handled) return;
+    return;
+  }
+
+  // --- Only the code BELOW runs if the user IS muted! ---
+  const challenge = activeChallenges.get(userId);
+  const freeSpeechTimer = freeSpeechTimers.get(userId);
+  if (freeSpeechTimer) return;
+  if (challenge?.state === 'solved') {
+    if (Math.random() < 0.2) {
+      await startFreeSpeechCountdown(message.channel, userId);
+      try {
+        await message.channel.send(`<@${userId}> congrats u now have temporary free speech`);
+      } catch (error) {
+        console.error('Failed to send temporary free speech message:', error);
+      }
+    }
+    activeChallenges.delete(userId);
+    return;
+  }
+  safeDelete(message);
+  if (challenge?.state === 'waiting') {
+    const guess = parseInt(content, 10);
+    if (!isNaN(guess) && guess === challenge.answer) {
+      try {
+        await message.channel.send(`<@${userId}> good boy`);
+      } catch (error) {
+        console.error('Failed to send good boy message:', error);
+      }
+      activeChallenges.set(userId, { state: 'solved' });
+    } else {
+      try {
+        await message.channel.send(`<@${userId}> nuh uh, try again`);
+      } catch (error) {
+        console.error('Failed to send try again message:', error);
+      }
+      await sendChallenge(message.channel, userId, false);
+    }
+    return;
+  }
+  await sendChallenge(message.channel, userId, true);
+});
+
+client.on('error', error => console.error('Discord client error:', error));
+client.on('warn', warning => console.warn('Discord client warning:', warning));
 
 // =============================================================================
 // PROCESS AND EXIT HANDLERS
