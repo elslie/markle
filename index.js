@@ -134,6 +134,7 @@ const wordResponses = {
   'good morning': 'good morning{!}',
   '...': '...',
   'oleje': 'oleje'
+  'tick': 'tock'
 };
 
 const multiWordResponses = new Map([
