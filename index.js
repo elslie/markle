@@ -572,6 +572,10 @@ client.on('interactionCreate', async interaction => {
 client.on('messageCreate', async (message) => {
   if (message.author.bot) return; // Ignore other bots
 
+  // Deduplication: ignore already processed messages
+  if (processedMessages.has(message.id)) return;
+  processedMessages.add(message.id);
+
   // Optionally restrict to allowed users if ALLOWED_USERS is not empty
   if (allowedUsers.size > 0 && !allowedUsers.has(message.author.id)) return;
 
