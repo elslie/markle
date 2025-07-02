@@ -334,35 +334,42 @@ function checkWordResponses(content) {
   return null;
 }
 
-// =============================================================================
-// PING PONG GAME FUNCTIONS (RANDOM VERSION, SINGLE SEND)
-// =============================================================================
+// ===============================
+// PING PONG GAME FUNCTIONS (IMPROVED, ROBUST TIMEOUTS)
+// ===============================
+
+let globalGameId = 0; // Used to make each ping-pong exchange unique
 
 function handlePingPongResponse(message, content) {
   const userId = message.author.id;
   const lower = content.toLowerCase();
   const game = pingPongGames.get(userId);
 
+  // LOG incoming ping/pong
+  console.log(`[PingPong] Received "${content}" from ${userId}, current game:`, game);
+
   if (!game) {
     if (lower === 'ping' || lower === 'pong') {
       const botWord = Math.random() < 0.5 ? 'ping' : 'pong';
       startPingPongGame(message.channel, userId, botWord, 1);
-      // count first exchange for both leaderboards
       incrementPingPongExchange(userId);
       return true;
     }
     return false;
   }
 
-  if (lower === game.expectedWord) {
+  // Only process if response is correct and the game hasn't been ended by a timeout
+  if (lower === game.expectedWord && game.active) {
+    // Mark this game as inactive, so timeout can't end it later
+    game.active = false;
     clearTimeout(game.timeout);
+
     const newExchanges = game.exchanges + 1;
     const nextWord = Math.random() < 0.5 ? 'ping' : 'pong';
 
-    // increment total exchanges
     incrementPingPongExchange(userId);
 
-    // update highest streak leaderboard
+    // Update highest streak leaderboard
     const prev = pingPongLeaderboard.get(userId) || 0;
     if (newExchanges > prev) {
       console.log(`[Leaderboard] New high score for ${userId}: ${newExchanges} (prev: ${prev})`);
@@ -387,37 +394,66 @@ async function startPingPongGame(channel, userId, expectedWord = 'ping', exchang
     const existingGame = pingPongGames.get(userId);
     if (existingGame.timeout) clearTimeout(existingGame.timeout);
   }
-  const timeLimit = exchanges === 0 ? INITIAL_PING_PONG_TIME :
-    Math.max(1000, INITIAL_PING_PONG_TIME * Math.pow(1 - TIME_REDUCTION_RATE, exchanges));
+  // Use a slightly higher initial time to account for Discord lag
+  const timeLimit = exchanges === 0 ? 7000
+    : Math.max(1200, INITIAL_PING_PONG_TIME * Math.pow(1 - TIME_REDUCTION_RATE, exchanges));
+  const myGameId = ++globalGameId;
+
+  // Set up the game state
+  pingPongGames.set(userId, {
+    exchanges,
+    timeout: null, // will be set below
+    expectedWord,
+    active: true,
+    gameId: myGameId,
+  });
+
   try {
     await channel.send(`<@${userId}> ${expectedWord}`);
   } catch (error) {
     console.error('Failed to send ping/pong message:', error);
   }
+
+  // Timeout callback checks for gameId and active flag before ending game
   const timeout = setTimeout(async () => {
-    try {
-      const prev = pingPongLeaderboard.get(userId) || 0;
-      if (exchanges > prev) {
-        console.log(`[Leaderboard] Timed out, new high score for ${userId}: ${exchanges} (prev: ${prev})`);
-        pingPongLeaderboard.set(userId, exchanges);
-        await saveLeaderboardToGitHub();
-      }
-      try {
-        await channel.send(`ggwp <@${userId}>, you had ${exchanges} exchanges`);
-      } catch (error) {
-        console.error('Failed to send ping-pong timeout message:', error);
-      }
-      pingPongGames.delete(userId);
-    } catch (error) {
-      console.error('Error in ping-pong timeout:', error);
+    const game = pingPongGames.get(userId);
+    if (!game || !game.active || game.gameId !== myGameId) {
+      // Either already handled by correct response, or user started a new game
+      return;
     }
+    game.active = false;
+    const prev = pingPongLeaderboard.get(userId) || 0;
+    if (game.exchanges > prev) {
+      console.log(`[Leaderboard] Timed out, new high score for ${userId}: ${game.exchanges} (prev: ${prev})`);
+      pingPongLeaderboard.set(userId, game.exchanges);
+      await saveLeaderboardToGitHub();
+    }
+    try {
+      await channel.send(`ggwp <@${userId}>, you had ${game.exchanges} exchanges`);
+    } catch (error) {
+      console.error('Failed to send ping-pong timeout message:', error);
+    }
+    pingPongGames.delete(userId);
+    console.log(`[PingPong] Game ended for ${userId} by timeout at ${game.exchanges} exchanges.`);
   }, timeLimit);
-  pingPongGames.set(userId, {
-    exchanges,
-    timeout,
-    expectedWord
-  });
+
+  // Save the timeout handle
+  const game = pingPongGames.get(userId);
+  if (game) game.timeout = timeout;
+  console.log(`[PingPong] Started/continued game for ${userId}: expecting "${expectedWord}", exchanges: ${exchanges}, gameId: ${myGameId}`);
 }
+
+// ===============================
+// DEDUPLICATION OPTIMIZATION
+// ===============================
+
+// Clean up deduplication sets more often (every 5 mins instead of 10)
+setInterval(() => {
+  processedMessages.clear();
+  processedInteractions.clear();
+  console.log('[Deduplication] cleared processedMessages and processedInteractions sets');
+}, 5 * 60 * 1000);
+
 
 // =============================================================================
 // SLASH COMMANDS AND STARTUP
