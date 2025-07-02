@@ -413,8 +413,6 @@ async function startPingPongGame(channel, userId, expectedWord = 'ping', exchang
   });
 }
 
-// ... (all your other functions remain unchanged)
-
 // =============================================================================
 // SLASH COMMANDS AND STARTUP
 // =============================================================================
@@ -481,7 +479,9 @@ client.once('ready', async () => {
 
 client.on('interactionCreate', async interaction => {
   // Prevent duplicate interactions
-  // Restrict all commands except ping pong leaderboards to allowedSlashCommandUsers
+  if (processedInteractions.has(interaction.id)) return;
+  processedInteractions.add(interaction.id);
+
   try {
     // Restrict all commands except ping pong leaderboards to allowedSlashCommandUsers
     if (
@@ -565,7 +565,28 @@ client.on('interactionCreate', async interaction => {
   }
 });
 
-// ... (rest of your message, moderation, and event handlers remain unchanged)
+// =============================================================================
+// MESSAGE HANDLER FOR REGULAR MESSAGES (PING, MARKLE, ETC)
+// =============================================================================
+
+client.on('messageCreate', async (message) => {
+  if (message.author.bot) return; // Ignore other bots
+
+  // Optionally restrict to allowed users if ALLOWED_USERS is not empty
+  if (allowedUsers.size > 0 && !allowedUsers.has(message.author.id)) return;
+
+  const content = message.content.trim();
+
+  // Ping pong game handling
+  if (await handlePingPongResponse(message, content)) return;
+
+  // Word/phrase triggers (markle, marco, goodnight, etc)
+  const resp = checkWordResponses(content);
+  if (resp) {
+    await message.reply(resp);
+    return;
+  }
+});
 
 client.login(TOKEN).catch(error => {
   console.error('Failed to login:', error);
