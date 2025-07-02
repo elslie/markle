@@ -481,7 +481,9 @@ client.once('ready', async () => {
 
 client.on('interactionCreate', async interaction => {
   // Prevent duplicate interactions
-      // Restrict all commands except ping pong leaderboards to allowedSlashCommandUsers
+  // Restrict all commands except ping pong leaderboards to allowedSlashCommandUsers
+  try {
+    // Restrict all commands except ping pong leaderboards to allowedSlashCommandUsers
     if (
       !['pingpongleaderboard', 'pingpongexchangesleaderboard'].includes(interaction.commandName) &&
       !allowedSlashCommandUsers.has(interaction.user.id)
