@@ -142,7 +142,10 @@ const multiWordResponses = new Map([
   [['markle', 'fuck you'], 'fuck you too'],
   [['talk', 'to you'], 'oh sorry'],
   [['love you', 'markle'], 'love u too 🩷'],
-  [['love u', 'markle'], 'love u too 🩷']
+  [['love u', 'markle'], 'love u too 🩷'],
+  [['thank you', 'markle'], 'np 🩷'],
+  [['thank u', 'markle'], 'np 🩷'],
+  [['ty', 'markle'], 'np 🩷'],
 ]);
 
 const allowedUsers = new Set(
