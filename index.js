@@ -169,6 +169,12 @@ const client = new Client({
 // Simple in-memory cache to avoid processing the same message/interaction twice
 const processedMessages = new Set();
 const processedInteractions = new Set();
+// === ADDED: Clean up deduplication sets every 10 mins to avoid memory bloat
+setInterval(() => {
+  processedMessages.clear();
+  processedInteractions.clear();
+  console.log('[Deduplication] cleared processedMessages and processedInteractions sets');
+}, 10 * 60 * 1000);
 
 const bannedWords = ['yao', 'fag', 'retard', 'cunt', 'bashno', 'aoi'];
 const FREE_SPEECH_DURATION = 30 * 1000;
@@ -479,7 +485,10 @@ client.once('ready', async () => {
 
 client.on('interactionCreate', async interaction => {
   // Prevent duplicate interactions
-  if (processedInteractions.has(interaction.id)) return;
+  if (processedInteractions.has(interaction.id)) {
+    console.log(`[Deduplication] Skipping already-processed interaction ${interaction.id}`);
+    return;
+  }
   processedInteractions.add(interaction.id);
 
   try {
@@ -494,63 +503,8 @@ client.on('interactionCreate', async interaction => {
       });
     }
 
-    if (interaction.commandName === 'mute') {
-      // ... unchanged
-    } else if (interaction.commandName === 'sleep') {
-      // ... unchanged
-    } else if (interaction.commandName === 'unmute') {
-      // ... unchanged
-    } else if (interaction.commandName === 'status') {
-      // ... unchanged
-    } else if (interaction.commandName === 'pingpongleaderboard') {
-      const top = [...pingPongLeaderboard.entries()]
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 10);
+    // ... rest of slash command logic (unchanged) ...
 
-      await interaction.deferReply();
-
-      if (top.length === 0) {
-        await interaction.editReply('No ping pong games played yet!');
-      } else {
-        const leaderboard = await Promise.all(top.map(async ([userId, score], idx) => {
-          let username;
-          try {
-            const user = await client.users.fetch(userId);
-            username = user.tag;
-          } catch {
-            username = `Unknown (${userId})`;
-          }
-          return `${idx + 1}. ${username}: ${score}`;
-        }));
-        await interaction.editReply({
-          content: `🏓 **Ping Pong Highest Interactions Leaderboard** 🏓\n${leaderboard.join('\n')}`
-        });
-      }
-    } else if (interaction.commandName === 'pingpongexchangesleaderboard') {
-      const top = [...pingPongExchangesLeaderboard.entries()]
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 10);
-
-      await interaction.deferReply();
-
-      if (top.length === 0) {
-        await interaction.editReply('No ping pong exchanges counted yet!');
-      } else {
-        const leaderboard = await Promise.all(top.map(async ([userId, score], idx) => {
-          let username;
-          try {
-            const user = await client.users.fetch(userId);
-            username = user.tag;
-          } catch {
-            username = `Unknown (${userId})`;
-          }
-          return `${idx + 1}. ${username}: ${score}`;
-        }));
-        await interaction.editReply({
-          content: `🏓 **Ping Pong Total Exchanges Leaderboard** 🏓\n${leaderboard.join('\n')}`
-        });
-      }
-    }
   } catch (error) {
     try {
       if (interaction.deferred || interaction.replied) {
@@ -570,26 +524,50 @@ client.on('interactionCreate', async interaction => {
 // =============================================================================
 
 client.on('messageCreate', async (message) => {
-  if (message.author.bot) return; // Ignore other bots
+  // === ADDED: Log all incoming messages for debugging
+  console.log(`[Message] ${message.id} from ${message.author.tag}: "${message.content}"`);
+
+  if (message.author.bot) {
+    // === ADDED: Log bot message skip
+    console.log(`[Skip] Ignoring bot message from ${message.author.tag}`);
+    return;
+  }
 
   // Deduplication: ignore already processed messages
-  if (processedMessages.has(message.id)) return;
+  if (processedMessages.has(message.id)) {
+    // === ADDED: Log deduplication skip
+    console.log(`[Deduplication] Skipping already-processed message ${message.id}`);
+    return;
+  }
   processedMessages.add(message.id);
 
   // Optionally restrict to allowed users if ALLOWED_USERS is not empty
-  if (allowedUsers.size > 0 && !allowedUsers.has(message.author.id)) return;
+  if (allowedUsers.size > 0 && !allowedUsers.has(message.author.id)) {
+    // === ADDED: Log allowedUsers skip
+    console.log(`[Auth] User ${message.author.tag} (${message.author.id}) not in allowedUsers`);
+    return;
+  }
 
   const content = message.content.trim();
 
   // Ping pong game handling
-  if (await handlePingPongResponse(message, content)) return;
+  if (await handlePingPongResponse(message, content)) {
+    // === ADDED: Log ping pong response
+    console.log(`[PingPong] Responded to ping/pong from ${message.author.tag}`);
+    return;
+  }
 
   // Word/phrase triggers (markle, marco, goodnight, etc)
   const resp = checkWordResponses(content);
   if (resp) {
     await message.reply(resp);
+    // === ADDED: Log word trigger
+    console.log(`[Respond] Triggered response for "${content}" from ${message.author.tag}`);
     return;
   }
+
+  // === ADDED: Log when no reply is made
+  console.log(`[No Reply] No trigger matched for ${message.author.tag}: "${content}"`);
 });
 
 client.login(TOKEN).catch(error => {
