@@ -481,14 +481,9 @@ client.once('ready', async () => {
 
 client.on('interactionCreate', async interaction => {
   // Prevent duplicate interactions
-  if (processedInteractions.has(interaction.id)) return;
-  processedInteractions.add(interaction.id);
-
-  if (!interaction.isChatInputCommand()) return;
-
-  try {
+      // Restrict all commands except ping pong leaderboards to allowedSlashCommandUsers
     if (
-      ['mute', 'unmute', 'sleep'].includes(interaction.commandName) &&
+      !['pingpongleaderboard', 'pingpongexchangesleaderboard'].includes(interaction.commandName) &&
       !allowedSlashCommandUsers.has(interaction.user.id)
     ) {
       return interaction.reply({
