@@ -435,9 +435,7 @@ client.on('messageCreate', async (msg) => {
   // Normal bot features
   const response = checkWordResponses(msg.content);
   if (response) {
-    msg.channel.send(response).then(sentMsg => {
-      setTimeout(() => safeDelete(sentMsg), 5000);
-    }).catch(console.error);
+    msg.channel.send(response).catch(console.error);
     return;
   }
 
