@@ -20,6 +20,18 @@ const pingPongGames = new Map(); // userId -> { expectingResponse, exchanges, ti
 const mutedUsers = new Set();
 let isSleeping = false;
 
+// --- Banned Words Setup ---
+const bannedWords = new Set([
+  "badword1",
+  "badword2",
+  // Add more banned words here
+]);
+
+function containsBannedWord(content) {
+  const words = content.toLowerCase().split(/\s+/);
+  return words.some(word => bannedWords.has(word));
+}
+
 const octokit = new Octokit({ auth: process.env.GITHUB_TOKEN });
 const GITHUB_OWNER = "elslie";
 const GITHUB_REPO = "markle";
@@ -140,7 +152,7 @@ function checkWordResponses(content) {
     return processRandomPunctuation('cya{!}');
   }
   if (/\bgm\b/i.test(originalMessage)) {
-  return processRandomPunctuation('cya{!}');
+    return processRandomPunctuation('cya{!}');
   }
   if (wordResponses[lower]) {
     return processRandomPunctuation(wordResponses[lower]);
@@ -317,6 +329,16 @@ client.on('interactionCreate', async interaction => {
 client.on('messageCreate', async (msg) => {
   if (msg.author.bot) return;
   if (mutedUsers.has(msg.author.id) || isSleeping) return;
+  if (containsBannedWord(msg.content)) {
+    // Option 1: Ignore the message (do nothing)
+    return;
+
+    // Option 2: Delete the message
+    // safeDelete(msg); return;
+
+    // Option 3: Warn the user
+    // msg.channel.send(`${msg.author}, that word is not allowed!`); return;
+  }
 
   const response = checkWordResponses(msg.content);
   if (response) {
