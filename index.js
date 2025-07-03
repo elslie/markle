@@ -405,6 +405,54 @@ client.on('interactionCreate', async interaction => {
   }
 });
 
+// --- Ping Pong Response Handler ---
+function handlePingPongResponse(msg, content) {
+  const userId = msg.author.id;
+  const lower = content.trim().toLowerCase();
+  const game = pingPongGames.get(userId);
+
+  // Only respond to "ping" or "pong"
+  if (lower !== "ping" && lower !== "pong") return;
+
+  // Start new game if none exists and user says "ping" or "pong"
+  if (!game) {
+    msg.channel.send(lower === "ping" ? "pong" : "ping");
+    startPingPongGame(msg.channel, userId, false, 1);
+    pingPongGames.get(userId).expectingResponse = lower !== "ping";
+    return;
+  }
+
+  // If user says correct response
+  if (
+    (game.expectingResponse && lower === "ping") ||
+    (!game.expectingResponse && lower === "pong")
+  ) {
+    clearTimeout(game.timeout);
+    const newExchanges = game.exchanges + 1;
+    // You can set a win threshold if desired (optional):
+    // if (newExchanges >= PING_PONG_WIN_THRESHOLD) {
+    //   msg.channel.send(`<@${userId}> wow you actually won the ping pong game! 🏆 (${newExchanges} exchanges)`);
+    //   pingPongGames.delete(userId);
+    //   return;
+    // }
+
+    msg.channel.send(lower === "ping" ? "pong" : "ping");
+    startPingPongGame(msg.channel, userId, false, newExchanges);
+    pingPongGames.get(userId).expectingResponse = lower !== "ping";
+    // Update exchanges leaderboard
+    pingPongExchangesLeaderboard.set(
+      userId,
+      (pingPongExchangesLeaderboard.get(userId) || 0) + 1
+    );
+    return;
+  } else {
+    // Wrong response resets game
+    msg.channel.send("Wrong! Type 'ping' or 'pong' to start again.");
+    pingPongGames.delete(userId);
+    return;
+  }
+}
+
 // --- Muted User Message Handler ---
 client.on('messageCreate', async (msg) => {
   if (msg.author.bot) return;
