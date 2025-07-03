@@ -107,7 +107,7 @@ async function loadLeaderboardFromGitHub() {
     });
     const leaderboardRaw = Buffer.from(data.content, "base64").toString();
     const leaderboardArr = JSON.parse(leaderboardRaw);
-    pingPongLeaderboard.clear();
+    pingPongLeaderboard.clear(); 
     for (const [userId, score] of leaderboardArr) {
       pingPongLeaderboard.set(userId, score);
     }
