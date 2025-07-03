@@ -202,42 +202,6 @@ function safeDelete(msg) {
 }
 
 // --- Ping Pong Endless Game Logic (open to all users) ---
-function handlePingPongResponse(message, content) {
-  const userId = message.author.id;
-  const lower = content.toLowerCase();
-  const game = pingPongGames.get(userId);
-
-  if (lower === 'ping') {
-    if (game && game.expectingResponse) {
-      clearTimeout(game.timeout);
-      const newExchanges = game.exchanges + 1;
-      pingPongExchangesLeaderboard.set(userId, (pingPongExchangesLeaderboard.get(userId) || 0) + 1);
-      message.channel.send('pong');
-      startPingPongGame(message.channel, userId, false, newExchanges);
-      pingPongGames.get(userId).expectingResponse = false;
-      return true;
-    } else if (!game) {
-      message.channel.send('pong');
-      startPingPongGame(message.channel, userId, false, 1);
-      pingPongGames.get(userId).expectingResponse = false;
-      return true;
-    }
-  }
-
-  if (lower === 'pong') {
-    if (game && !game.expectingResponse) {
-      clearTimeout(game.timeout);
-      const newExchanges = game.exchanges + 1;
-      pingPongExchangesLeaderboard.set(userId, (pingPongExchangesLeaderboard.get(userId) || 0) + 1);
-      message.channel.send('ping');
-      startPingPongGame(message.channel, userId, false, newExchanges);
-      pingPongGames.get(userId).expectingResponse = true;
-      return true;
-    }
-  }
-  return false;
-}
-
 function startPingPongGame(channel, userId, isInitialPing = true, exchanges = 0) {
   if (pingPongGames.has(userId)) {
     const existingGame = pingPongGames.get(userId);
@@ -274,7 +238,7 @@ function startPingPongGame(channel, userId, isInitialPing = true, exchanges = 0)
     }
     await saveExchangesLeaderboardToGitHub();
 
-    channel.send(`<@${userId}> ${msg}`);
+    channel.send(`<@${userId}> ${processRandomPunctuation(msg)}`);
 
     pingPongGames.delete(userId);
   }, timeLimit);
