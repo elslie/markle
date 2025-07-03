@@ -114,6 +114,23 @@ async function loadLeaderboardFromGitHub() {
   } catch (err) {
     console.warn("[Leaderboard] No existing GitHub leaderboard file or error loading, starting fresh.");
   }
+  try {
+    const { data } = await octokit.repos.getContent({
+      owner: GITHUB_OWNER,
+      repo: GITHUB_REPO,
+      path: EXCHANGES_LEADERBOARD_PATH,
+      ref: DEFAULT_BRANCH,
+    });
+    const exchangesRaw = Buffer.from(data.content, "base64").toString();
+    const exchangesArr = JSON.parse(exchangesRaw);
+    pingPongExchangesLeaderboard.clear();
+    for (const [userId, score] of exchangesArr) {
+      pingPongExchangesLeaderboard.set(userId, score);
+    }
+    console.log(`[Exchanges Leaderboard] Loaded ${pingPongExchangesLeaderboard.size} entries from GitHub file.`);
+  } catch (err) {
+    console.warn("[Exchanges Leaderboard] No existing GitHub exchanges leaderboard file or error loading, starting fresh.");
+  }
 }
 
 // --- Word Response Logic ---
@@ -309,6 +326,8 @@ async function registerSlashCommands() {
       ),
     new SlashCommandBuilder().setName('sleep').setDescription('Put Markle bot to sleep (no ping-pong/auto-replies)'),
     new SlashCommandBuilder().setName('wake').setDescription('Wake Markle bot up!'),
+    new SlashCommandBuilder().setName('pingpongleaderboard').setDescription('Show ping-pong highest streak leaderboard'),
+    new SlashCommandBuilder().setName('pingpongexchangesleaderboard').setDescription('Show ping-pong total exchanges leaderboard'),
   ].map(cmd => cmd.toJSON());
 
   const rest = new REST({ version: '10' }).setToken(TOKEN);
@@ -343,7 +362,7 @@ client.on('interactionCreate', async interaction => {
         if (mutedUsers.has(target.id) && mutedUsers.get(target.id).expiresAt === expiresAt) {
           mutedUsers.delete(target.id);
         }
-      }, minutes * 60 * 1000 + 1000); // Add a second for safety
+      }, minutes * 60 * 1000 + 1000);
     }
   }
   if (interaction.commandName === 'unmute') {
@@ -358,6 +377,40 @@ client.on('interactionCreate', async interaction => {
   if (interaction.commandName === 'wake') {
     isSleeping = false;
     await interaction.reply({ content: 'Markle is awake!', ephemeral: true });
+  }
+  if (interaction.commandName === 'pingpongleaderboard') {
+    // Show top 10 highest streaks
+    const items = [...pingPongLeaderboard.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 10);
+    if (items.length === 0) {
+      await interaction.reply('No games played yet!');
+      return;
+    }
+    let text = '**🏆 Ping-Pong Highest Streaks 🏆**\n';
+    let rank = 1;
+    for (const [userId, score] of items) {
+      text += `${rank}. <@${userId}> — ${score}\n`;
+      rank++;
+    }
+    await interaction.reply({ content: text, allowedMentions: { parse: [] } });
+  }
+  if (interaction.commandName === 'pingpongexchangesleaderboard') {
+    // Show top 10 total exchanges
+    const items = [...pingPongExchangesLeaderboard.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 10);
+    if (items.length === 0) {
+      await interaction.reply('No exchanges recorded yet!');
+      return;
+    }
+    let text = '**🏓 Ping-Pong Total Exchanges 🏓**\n';
+    let rank = 1;
+    for (const [userId, score] of items) {
+      text += `${rank}. <@${userId}> — ${score}\n`;
+      rank++;
+    }
+    await interaction.reply({ content: text, allowedMentions: { parse: [] } });
   }
 });
 
@@ -386,18 +439,15 @@ client.on('messageCreate', async (msg) => {
     const expected = '!'.repeat(muted.challenge);
     if (msg.content.trim() === expected) {
       // Correct!
-      muted.free = true; // allow one message
-      muted.challenge = Math.floor(Math.random() * 10) + 3; // new challenge next time
+      muted.free = true;
+      muted.challenge = Math.floor(Math.random() * 10) + 3;
       await msg.channel.send(`<@${msg.author.id}> correct! You get one free message.`);
     } else if (/^!+$/.test(msg.content.trim())) {
-      // Incorrect number of exclamation marks
       await msg.channel.send('nuh uh');
     } else {
-      // Send the challenge!
       await msg.channel.send(`<@${msg.author.id}> count(${expected})`);
     }
 
-    // Delete their message to keep channel clean
     safeDelete(msg);
     return;
   }
