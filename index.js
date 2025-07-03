@@ -17,10 +17,9 @@ const pingPongLeaderboard = new Map();
 const pingPongExchangesLeaderboard = new Map();
 const pingPongGames = new Map();
 
-const mutedUsers = new Map(); // userId -> { expiresAt, challenge, free }
+const mutedUsers = new Map();
 let isSleeping = false;
 
-// --- Banned Words Setup ---
 const bannedWords = new Set([
   "badword1",
   "badword2",
@@ -38,7 +37,6 @@ const LEADERBOARD_PATH = "leaderboard.json";
 const EXCHANGES_LEADERBOARD_PATH = "exchanges_leaderboard.json";
 const DEFAULT_BRANCH = "main";
 
-const PING_PONG_WIN_THRESHOLD = 5;
 const INITIAL_PING_PONG_TIME = 7000;
 const MIN_PING_PONG_TIME = 2000;
 
@@ -201,7 +199,7 @@ function safeDelete(msg) {
   }
 }
 
-// --- Ping Pong Core Logic ---
+// --- Ping Pong Endless Game Logic ---
 function handlePingPongResponse(message, content) {
   const userId = message.author.id;
   const lower = content.toLowerCase();
@@ -211,18 +209,11 @@ function handlePingPongResponse(message, content) {
     if (game && game.expectingResponse) {
       clearTimeout(game.timeout);
       const newExchanges = game.exchanges + 1;
-      if (newExchanges > (pingPongLeaderboard.get(userId) || 0)) {
-        pingPongLeaderboard.set(userId, newExchanges);
-        saveLeaderboardToGitHub();
-      }
-      pingPongExchangesLeaderboard.set(userId, (pingPongExchangesLeaderboard.get(userId) || 0) + 1);
-      saveExchangesLeaderboardToGitHub();
 
-      if (newExchanges >= PING_PONG_WIN_THRESHOLD) {
-        message.channel.send(`<@${userId}> wow you actually won the ping pong game! 🏆 (${newExchanges} exchanges)`);
-        pingPongGames.delete(userId);
-        return true;
-      }
+      // Update exchanges leaderboard live, but don't send messages yet
+      pingPongExchangesLeaderboard.set(userId, (pingPongExchangesLeaderboard.get(userId) || 0) + 1);
+
+      // Continue game
       message.channel.send('pong');
       startPingPongGame(message.channel, userId, false, newExchanges);
       pingPongGames.get(userId).expectingResponse = false;
@@ -239,18 +230,11 @@ function handlePingPongResponse(message, content) {
     if (game && !game.expectingResponse) {
       clearTimeout(game.timeout);
       const newExchanges = game.exchanges + 1;
-      if (newExchanges > (pingPongLeaderboard.get(userId) || 0)) {
-        pingPongLeaderboard.set(userId, newExchanges);
-        saveLeaderboardToGitHub();
-      }
-      pingPongExchangesLeaderboard.set(userId, (pingPongExchangesLeaderboard.get(userId) || 0) + 1);
-      saveExchangesLeaderboardToGitHub();
 
-      if (newExchanges >= PING_PONG_WIN_THRESHOLD) {
-        message.channel.send(`<@${userId}> wow you actually won the ping pong game! 🏆 (${newExchanges} exchanges)`);
-        pingPongGames.delete(userId);
-        return true;
-      }
+      // Update exchanges leaderboard live, but don't send messages yet
+      pingPongExchangesLeaderboard.set(userId, (pingPongExchangesLeaderboard.get(userId) || 0) + 1);
+
+      // Continue game
       message.channel.send('ping');
       startPingPongGame(message.channel, userId, false, newExchanges);
       pingPongGames.get(userId).expectingResponse = true;
@@ -269,8 +253,44 @@ function startPingPongGame(channel, userId, isInitialPing = true, exchanges = 0)
     isInitialPing ? INITIAL_PING_PONG_TIME : INITIAL_PING_PONG_TIME - exchanges * 750,
     MIN_PING_PONG_TIME
   );
-  const timeout = setTimeout(() => {
-    channel.send(`<@${userId}> you took too long! Game over with ${exchanges} exchanges.`);
+  const timeout = setTimeout(async () => {
+    // Game over!
+    let msg = `ggwp, you had ${exchanges} exchanges`;
+
+    // Check if new streak makes top 10 or improves current ranking
+    let leaderboardChanged = false;
+    const entries = [...pingPongLeaderboard.entries()];
+    const sorted = entries.sort((a, b) => b[1] - a[1]);
+    const oldRank = sorted.findIndex(([id]) => id === userId);
+
+    // Only update leaderboard if new streak is higher
+    const prevHigh = pingPongLeaderboard.get(userId) || 0;
+    if (exchanges > prevHigh) {
+      pingPongLeaderboard.set(userId, exchanges);
+      await saveLeaderboardToGitHub();
+      // Re-evaluate ranking
+      const newSorted = [...pingPongLeaderboard.entries()].sort((a, b) => b[1] - a[1]);
+      const newRank = newSorted.findIndex(([id]) => id === userId);
+      if (newRank !== -1 && (newRank < oldRank || oldRank === -1) && newRank < 10) {
+        msg += `\nyou are now number ${newRank + 1} on the streak leaderboard{!}`;
+        leaderboardChanged = true;
+      }
+    }
+
+    // Check exchanges leaderboard for top 10 or improved placement
+    const exEntries = [...pingPongExchangesLeaderboard.entries()];
+    const exSorted = exEntries.sort((a, b) => b[1] - a[1]);
+    const prevExRank = exSorted.findIndex(([id]) => id === userId);
+    const newExTotal = (pingPongExchangesLeaderboard.get(userId) || 0);
+    // If this brought them into or up the top 10, notify
+    if (prevExRank !== -1 && prevExRank < 10) {
+      msg += `\nyou are now number ${prevExRank + 1} on the exchanges leaderboard{!}`;
+      leaderboardChanged = true;
+    }
+    await saveExchangesLeaderboardToGitHub();
+
+    channel.send(`<@${userId}> ${msg}`);
+
     pingPongGames.delete(userId);
   }, timeLimit);
   pingPongGames.set(userId, {
@@ -379,7 +399,6 @@ client.on('interactionCreate', async interaction => {
     await interaction.reply({ content: 'Markle is awake!', ephemeral: true });
   }
   if (interaction.commandName === 'pingpongleaderboard') {
-    // Show top 10 highest streaks
     const items = [...pingPongLeaderboard.entries()]
       .sort((a, b) => b[1] - a[1])
       .slice(0, 10);
@@ -396,7 +415,6 @@ client.on('interactionCreate', async interaction => {
     await interaction.reply({ content: text, allowedMentions: { parse: [] } });
   }
   if (interaction.commandName === 'pingpongexchangesleaderboard') {
-    // Show top 10 total exchanges
     const items = [...pingPongExchangesLeaderboard.entries()]
       .sort((a, b) => b[1] - a[1])
       .slice(0, 10);
@@ -423,31 +441,24 @@ client.on('messageCreate', async (msg) => {
   // Muted user logic
   const muted = mutedUsers.get(msg.author.id);
   if (muted) {
-    // Clean up expired mutes
     if (muted.expiresAt && Date.now() > muted.expiresAt) {
       mutedUsers.delete(msg.author.id);
       return;
     }
-
-    // If user has a "free" message, allow it and reset free
     if (muted.free) {
       muted.free = false;
       return;
     }
-
-    // Is this a reply to the challenge?
     const expected = '!'.repeat(muted.challenge);
     if (msg.content.trim() === expected) {
-      // Correct!
       muted.free = true;
       muted.challenge = Math.floor(Math.random() * 10) + 3;
-      await msg.channel.send(`<@${msg.author.id}> correct! You get one free message.`);
+      await msg.channel.send(`<@${msg.author.id}> correct! you get one message.`);
     } else if (/^!+$/.test(msg.content.trim())) {
       await msg.channel.send('nuh uh');
     } else {
       await msg.channel.send(`<@${msg.author.id}> count(${expected})`);
     }
-
     safeDelete(msg);
     return;
   }
