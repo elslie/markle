@@ -12,19 +12,18 @@ console.log('=== Markle Bot starting up at', new Date().toISOString());
 
 const TOKEN = process.env.TOKEN || process.env.DISCORD_TOKEN;
 const CLIENT_ID = process.env.CLIENT_ID;
-const GUILD_ID = process.env.GUILD_ID;
 
-const pingPongLeaderboard = new Map(); // highest single-game streaks
-const pingPongExchangesLeaderboard = new Map(); // total lifetime exchanges
-const pingPongGames = new Map(); // userId -> { expectingResponse, exchanges, timeout }
-const mutedUsers = new Set();
+const pingPongLeaderboard = new Map();
+const pingPongExchangesLeaderboard = new Map();
+const pingPongGames = new Map();
+
+const mutedUsers = new Map(); // userId -> { expiresAt, challenge, free }
 let isSleeping = false;
 
 // --- Banned Words Setup ---
 const bannedWords = new Set([
   "badword1",
   "badword2",
-  // Add more banned words here
 ]);
 
 function containsBannedWord(content) {
@@ -40,8 +39,8 @@ const EXCHANGES_LEADERBOARD_PATH = "exchanges_leaderboard.json";
 const DEFAULT_BRANCH = "main";
 
 const PING_PONG_WIN_THRESHOLD = 5;
-const INITIAL_PING_PONG_TIME = 7000; // ms, first round
-const MIN_PING_PONG_TIME = 2000; // ms, fastest round
+const INITIAL_PING_PONG_TIME = 7000;
+const MIN_PING_PONG_TIME = 2000;
 
 // --- Robust GitHub File Save (with 409 retry) ---
 async function saveToGitHubFile({ path, message, content }) {
@@ -191,7 +190,6 @@ function handlePingPongResponse(message, content) {
   const lower = content.toLowerCase();
   const game = pingPongGames.get(userId);
 
-  // "ping"
   if (lower === 'ping') {
     if (game && game.expectingResponse) {
       clearTimeout(game.timeout);
@@ -220,7 +218,6 @@ function handlePingPongResponse(message, content) {
     }
   }
 
-  // "pong"
   if (lower === 'pong') {
     if (game && !game.expectingResponse) {
       clearTimeout(game.timeout);
@@ -251,7 +248,6 @@ function startPingPongGame(channel, userId, isInitialPing = true, exchanges = 0)
     const existingGame = pingPongGames.get(userId);
     if (existingGame.timeout) clearTimeout(existingGame.timeout);
   }
-  // Gets faster each round
   const timeLimit = Math.max(
     isInitialPing ? INITIAL_PING_PONG_TIME : INITIAL_PING_PONG_TIME - exchanges * 750,
     MIN_PING_PONG_TIME
@@ -261,7 +257,7 @@ function startPingPongGame(channel, userId, isInitialPing = true, exchanges = 0)
     pingPongGames.delete(userId);
   }, timeLimit);
   pingPongGames.set(userId, {
-    expectingResponse: isInitialPing, // true for ping, false for pong
+    expectingResponse: isInitialPing,
     exchanges,
     timeout,
   });
@@ -290,30 +286,70 @@ client.once('ready', () => {
 // --- Slash Command Registration ---
 async function registerSlashCommands() {
   const commands = [
-    new SlashCommandBuilder().setName('mute').setDescription('Mute Markle bot'),
-    new SlashCommandBuilder().setName('unmute').setDescription('Unmute Markle bot'),
+    new SlashCommandBuilder()
+      .setName('mute')
+      .setDescription('Mute a user with a challenge')
+      .addUserOption(option =>
+        option.setName('target')
+          .setDescription('User to mute')
+          .setRequired(true)
+      )
+      .addIntegerOption(option =>
+        option.setName('minutes')
+          .setDescription('Minutes to mute for (optional)')
+          .setRequired(false)
+      ),
+    new SlashCommandBuilder()
+      .setName('unmute')
+      .setDescription('Unmute a user')
+      .addUserOption(option =>
+        option.setName('target')
+          .setDescription('User to unmute')
+          .setRequired(true)
+      ),
     new SlashCommandBuilder().setName('sleep').setDescription('Put Markle bot to sleep (no ping-pong/auto-replies)'),
     new SlashCommandBuilder().setName('wake').setDescription('Wake Markle bot up!'),
   ].map(cmd => cmd.toJSON());
 
   const rest = new REST({ version: '10' }).setToken(TOKEN);
+
+  if (!CLIENT_ID) {
+    throw new Error('CLIENT_ID environment variable is missing!');
+  }
+
   await rest.put(
-    Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
+    Routes.applicationCommands(CLIENT_ID),
     { body: commands }
   );
-  console.log('Registered slash commands.');
+  console.log('Registered global slash commands.');
 }
 
 // --- Slash Command Handler ---
 client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;
   if (interaction.commandName === 'mute') {
-    mutedUsers.add(interaction.user.id);
-    await interaction.reply({ content: 'You have muted Markle!', ephemeral: true });
+    const target = interaction.options.getUser('target');
+    const minutes = interaction.options.getInteger('minutes');
+    const expiresAt = minutes ? Date.now() + minutes * 60 * 1000 : null;
+    const challengeCount = Math.floor(Math.random() * 10) + 3;
+    mutedUsers.set(target.id, {
+      expiresAt,
+      challenge: challengeCount,
+      free: false,
+    });
+    await interaction.reply({ content: `🔇 Muted <@${target.id}>${minutes ? ` for ${minutes} minute(s)` : ' indefinitely'}!`, allowedMentions: { users: [target.id] } });
+    if (expiresAt) {
+      setTimeout(() => {
+        if (mutedUsers.has(target.id) && mutedUsers.get(target.id).expiresAt === expiresAt) {
+          mutedUsers.delete(target.id);
+        }
+      }, minutes * 60 * 1000 + 1000); // Add a second for safety
+    }
   }
   if (interaction.commandName === 'unmute') {
-    mutedUsers.delete(interaction.user.id);
-    await interaction.reply({ content: 'You have unmuted Markle!', ephemeral: true });
+    const target = interaction.options.getUser('target');
+    mutedUsers.delete(target.id);
+    await interaction.reply({ content: `🔊 Unmuted <@${target.id}>!`, allowedMentions: { users: [target.id] } });
   }
   if (interaction.commandName === 'sleep') {
     isSleeping = true;
@@ -325,21 +361,48 @@ client.on('interactionCreate', async interaction => {
   }
 });
 
-// --- Main message handler ---
+// --- Muted User Message Handler ---
 client.on('messageCreate', async (msg) => {
   if (msg.author.bot) return;
-  if (mutedUsers.has(msg.author.id) || isSleeping) return;
-  if (containsBannedWord(msg.content)) {
-    // Option 1: Ignore the message (do nothing)
+  if (isSleeping) return;
+  if (containsBannedWord(msg.content)) return;
+
+  // Muted user logic
+  const muted = mutedUsers.get(msg.author.id);
+  if (muted) {
+    // Clean up expired mutes
+    if (muted.expiresAt && Date.now() > muted.expiresAt) {
+      mutedUsers.delete(msg.author.id);
+      return;
+    }
+
+    // If user has a "free" message, allow it and reset free
+    if (muted.free) {
+      muted.free = false;
+      return;
+    }
+
+    // Is this a reply to the challenge?
+    const expected = '!'.repeat(muted.challenge);
+    if (msg.content.trim() === expected) {
+      // Correct!
+      muted.free = true; // allow one message
+      muted.challenge = Math.floor(Math.random() * 10) + 3; // new challenge next time
+      await msg.channel.send(`<@${msg.author.id}> correct! You get one free message.`);
+    } else if (/^!+$/.test(msg.content.trim())) {
+      // Incorrect number of exclamation marks
+      await msg.channel.send('nuh uh');
+    } else {
+      // Send the challenge!
+      await msg.channel.send(`<@${msg.author.id}> count(${expected})`);
+    }
+
+    // Delete their message to keep channel clean
+    safeDelete(msg);
     return;
-
-    // Option 2: Delete the message
-    // safeDelete(msg); return;
-
-    // Option 3: Warn the user
-    // msg.channel.send(`${msg.author}, that word is not allowed!`); return;
   }
 
+  // Normal bot features
   const response = checkWordResponses(msg.content);
   if (response) {
     msg.channel.send(response).then(sentMsg => {
