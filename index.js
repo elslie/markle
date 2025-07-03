@@ -15,12 +15,9 @@ const CLIENT_ID = process.env.CLIENT_ID;
 
 // ---- Allowed users for admin commands ----
 const ALLOWED_USERS = [
-  // Put Discord user IDs here as strings, e.g.:
-  // "123456789012345678", "234567890123456789"
-  // As the repo owner, you may want your own ID here.
+  // "123456789012345678", // Add your admin user IDs here
 ];
 
-// --- Data Structures ---
 const pingPongLeaderboard = new Map();
 const pingPongExchangesLeaderboard = new Map();
 const pingPongGames = new Map();
@@ -47,7 +44,6 @@ const DEFAULT_BRANCH = "main";
 const INITIAL_PING_PONG_TIME = 7000;
 const MIN_PING_PONG_TIME = 2000;
 
-// --- Robust GitHub File Save (with 409 retry) ---
 async function saveToGitHubFile({ path, message, content }) {
   let attempts = 0;
   let sha;
@@ -138,7 +134,6 @@ async function loadLeaderboardFromGitHub() {
   }
 }
 
-// --- Word Response Logic ---
 const wordResponses = {
   "hello": "hi!",
   "bye": "goodbye!",
@@ -206,7 +201,7 @@ function safeDelete(msg) {
   }
 }
 
-// --- Ping Pong Endless Game Logic ---
+// --- Ping Pong Endless Game Logic (open to all users) ---
 function handlePingPongResponse(message, content) {
   const userId = message.author.id;
   const lower = content.toLowerCase();
@@ -370,6 +365,44 @@ client.on('interactionCreate', async interaction => {
     return;
   }
 
+  // Leaderboard commands: always reply within 3 seconds, and defer if possibly slow
+  if (interaction.commandName === 'pingpongleaderboard') {
+    await interaction.deferReply({ ephemeral: false });
+    const items = [...pingPongLeaderboard.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 10);
+    if (items.length === 0) {
+      await interaction.editReply('No games played yet!');
+      return;
+    }
+    let text = '**🏆 Ping-Pong Highest Streaks 🏆**\n';
+    let rank = 1;
+    for (const [userId, score] of items) {
+      text += `${rank}. <@${userId}> — ${score}\n`;
+      rank++;
+    }
+    await interaction.editReply({ content: text, allowedMentions: { parse: [] } });
+    return;
+  }
+  if (interaction.commandName === 'pingpongexchangesleaderboard') {
+    await interaction.deferReply({ ephemeral: false });
+    const items = [...pingPongExchangesLeaderboard.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 10);
+    if (items.length === 0) {
+      await interaction.editReply('No exchanges recorded yet!');
+      return;
+    }
+    let text = '**🏓 Ping-Pong Total Exchanges 🏓**\n';
+    let rank = 1;
+    for (const [userId, score] of items) {
+      text += `${rank}. <@${userId}> — ${score}\n`;
+      rank++;
+    }
+    await interaction.editReply({ content: text, allowedMentions: { parse: [] } });
+    return;
+  }
+
   if (interaction.commandName === 'mute') {
     const target = interaction.options.getUser('target');
     const minutes = interaction.options.getInteger('minutes');
@@ -388,51 +421,23 @@ client.on('interactionCreate', async interaction => {
         }
       }, minutes * 60 * 1000 + 1000);
     }
+    return;
   }
   if (interaction.commandName === 'unmute') {
     const target = interaction.options.getUser('target');
     mutedUsers.delete(target.id);
     await interaction.reply({ content: `🔊 Unmuted <@${target.id}>!`, allowedMentions: { users: [target.id] } });
+    return;
   }
   if (interaction.commandName === 'sleep') {
     isSleeping = true;
     await interaction.reply({ content: 'Markle is now sleeping. No ping-pong or auto-replies.', ephemeral: true });
+    return;
   }
   if (interaction.commandName === 'wake') {
     isSleeping = false;
     await interaction.reply({ content: 'Markle is awake!', ephemeral: true });
-  }
-  if (interaction.commandName === 'pingpongleaderboard') {
-    const items = [...pingPongLeaderboard.entries()]
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 10);
-    if (items.length === 0) {
-      await interaction.reply('No games played yet!');
-      return;
-    }
-    let text = '**🏆 Ping-Pong Highest Streaks 🏆**\n';
-    let rank = 1;
-    for (const [userId, score] of items) {
-      text += `${rank}. <@${userId}> — ${score}\n`;
-      rank++;
-    }
-    await interaction.reply({ content: text, allowedMentions: { parse: [] } });
-  }
-  if (interaction.commandName === 'pingpongexchangesleaderboard') {
-    const items = [...pingPongExchangesLeaderboard.entries()]
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 10);
-    if (items.length === 0) {
-      await interaction.reply('No exchanges recorded yet!');
-      return;
-    }
-    let text = '**🏓 Ping-Pong Total Exchanges 🏓**\n';
-    let rank = 1;
-    for (const [userId, score] of items) {
-      text += `${rank}. <@${userId}> — ${score}\n`;
-      rank++;
-    }
-    await interaction.reply({ content: text, allowedMentions: { parse: [] } });
+    return;
   }
 });
 
@@ -477,6 +482,11 @@ client.on('messageCreate', async (msg) => {
   }
 
   handlePingPongResponse(msg, msg.content);
+});
+
+// --- Handle unhandled promise rejections globally (to avoid process crash) ---
+process.on('unhandledRejection', error => {
+  console.error('Unhandled promise rejection:', error);
 });
 
 client.login(TOKEN);
