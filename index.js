@@ -13,10 +13,17 @@ console.log('=== Markle Bot starting up at', new Date().toISOString());
 const TOKEN = process.env.TOKEN || process.env.DISCORD_TOKEN;
 const CLIENT_ID = process.env.CLIENT_ID;
 
+// ---- Allowed users for admin commands ----
+const ALLOWED_USERS = [
+  // Put Discord user IDs here as strings, e.g.:
+  // "123456789012345678", "234567890123456789"
+  // As the repo owner, you may want your own ID here.
+];
+
+// --- Data Structures ---
 const pingPongLeaderboard = new Map();
 const pingPongExchangesLeaderboard = new Map();
 const pingPongGames = new Map();
-
 const mutedUsers = new Map();
 let isSleeping = false;
 
@@ -209,11 +216,7 @@ function handlePingPongResponse(message, content) {
     if (game && game.expectingResponse) {
       clearTimeout(game.timeout);
       const newExchanges = game.exchanges + 1;
-
-      // Update exchanges leaderboard live, but don't send messages yet
       pingPongExchangesLeaderboard.set(userId, (pingPongExchangesLeaderboard.get(userId) || 0) + 1);
-
-      // Continue game
       message.channel.send('pong');
       startPingPongGame(message.channel, userId, false, newExchanges);
       pingPongGames.get(userId).expectingResponse = false;
@@ -230,11 +233,7 @@ function handlePingPongResponse(message, content) {
     if (game && !game.expectingResponse) {
       clearTimeout(game.timeout);
       const newExchanges = game.exchanges + 1;
-
-      // Update exchanges leaderboard live, but don't send messages yet
       pingPongExchangesLeaderboard.set(userId, (pingPongExchangesLeaderboard.get(userId) || 0) + 1);
-
-      // Continue game
       message.channel.send('ping');
       startPingPongGame(message.channel, userId, false, newExchanges);
       pingPongGames.get(userId).expectingResponse = true;
@@ -254,38 +253,29 @@ function startPingPongGame(channel, userId, isInitialPing = true, exchanges = 0)
     MIN_PING_PONG_TIME
   );
   const timeout = setTimeout(async () => {
-    // Game over!
     let msg = `ggwp, you had ${exchanges} exchanges`;
 
-    // Check if new streak makes top 10 or improves current ranking
-    let leaderboardChanged = false;
     const entries = [...pingPongLeaderboard.entries()];
     const sorted = entries.sort((a, b) => b[1] - a[1]);
     const oldRank = sorted.findIndex(([id]) => id === userId);
 
-    // Only update leaderboard if new streak is higher
     const prevHigh = pingPongLeaderboard.get(userId) || 0;
     if (exchanges > prevHigh) {
       pingPongLeaderboard.set(userId, exchanges);
       await saveLeaderboardToGitHub();
-      // Re-evaluate ranking
       const newSorted = [...pingPongLeaderboard.entries()].sort((a, b) => b[1] - a[1]);
       const newRank = newSorted.findIndex(([id]) => id === userId);
       if (newRank !== -1 && (newRank < oldRank || oldRank === -1) && newRank < 10) {
         msg += `\nyou are now number ${newRank + 1} on the streak leaderboard{!}`;
-        leaderboardChanged = true;
       }
     }
 
-    // Check exchanges leaderboard for top 10 or improved placement
     const exEntries = [...pingPongExchangesLeaderboard.entries()];
     const exSorted = exEntries.sort((a, b) => b[1] - a[1]);
     const prevExRank = exSorted.findIndex(([id]) => id === userId);
-    const newExTotal = (pingPongExchangesLeaderboard.get(userId) || 0);
-    // If this brought them into or up the top 10, notify
+
     if (prevExRank !== -1 && prevExRank < 10) {
       msg += `\nyou are now number ${prevExRank + 1} on the exchanges leaderboard{!}`;
-      leaderboardChanged = true;
     }
     await saveExchangesLeaderboardToGitHub();
 
@@ -366,6 +356,20 @@ async function registerSlashCommands() {
 // --- Slash Command Handler ---
 client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;
+  const userId = interaction.user.id;
+
+  // Admin-only commands
+  if (
+    ['mute', 'unmute', 'sleep', 'wake'].includes(interaction.commandName)
+    && !ALLOWED_USERS.includes(userId)
+  ) {
+    await interaction.reply({
+      content: "❌ You are not allowed to use this command.",
+      ephemeral: true
+    });
+    return;
+  }
+
   if (interaction.commandName === 'mute') {
     const target = interaction.options.getUser('target');
     const minutes = interaction.options.getInteger('minutes');
