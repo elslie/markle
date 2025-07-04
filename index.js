@@ -41,15 +41,6 @@ const DEFAULT_BRANCH = "main";
 const INITIAL_PING_PONG_TIME = 7000;
 const MIN_PING_PONG_TIME = 600;
 
-const randomPing = () => {
-  const options = ["ping", "p1ng", "p!ng", "piиg", "핑", "🅿️ing", "🅿️1ng"];
-  return options[Math.floor(Math.random() * options.length)];
-};
-const randomPong = () => {
-  const options = ["pong", "p0ng", "p0иg", "p_ng", "퐁", "🅿️ong", "🅿️0ng"];
-  return options[Math.floor(Math.random() * options.length)];
-};
-
 async function saveToGitHubFile({ path, message, content }) {
   let attempts = 0;
   let sha;
@@ -208,7 +199,7 @@ function safeDelete(msg) {
 }
 
 // --- Ping Pong Game Logic ---
-function startPingPongGame(channel, userId, exchanges = 0, expectPing = true, lastBotMessageType = "ping") {
+function startPingPongGame(channel, userId, exchanges = 0, lastBotMessageType = "ping") {
   if (pingPongGames.has(userId)) {
     const existingGame = pingPongGames.get(userId);
     if (existingGame.timeout) clearTimeout(existingGame.timeout);
@@ -216,14 +207,14 @@ function startPingPongGame(channel, userId, exchanges = 0, expectPing = true, la
   let timeLimit = Math.max(INITIAL_PING_PONG_TIME * Math.pow(0.9, exchanges), MIN_PING_PONG_TIME);
 
   const timeout = setTimeout(async () => {
-    channel.send(`<@${userId}> ⏱️ You took too long! Game over. You reached ${exchanges} exchanges.`);
+    const word = exchanges === 1 ? "exchange" : "exchanges";
+    channel.send(`<@${userId}> ggwp u had ${exchanges} ${word}`);
     pingPongGames.delete(userId);
   }, timeLimit);
 
   pingPongGames.set(userId, {
     exchanges,
     timeout,
-    expectPing,
     lastBotMessageType
   });
 }
@@ -238,27 +229,26 @@ function handlePingPongResponse(msg, content) {
   // Only respond to "ping" or "pong"
   if (lower !== "ping" && lower !== "pong") return;
 
-  // If no game, start a new one with a random bot message
+  // If no game, start a new one with a random bot message ("ping" or "pong")
   if (!game) {
     const botSaysPing = Math.random() < 0.5;
-    const botMessage = botSaysPing ? randomPing() : randomPong();
+    const botMessage = botSaysPing ? "ping" : "pong";
     msg.channel.send(botMessage);
-    startPingPongGame(msg.channel, userId, 0, botSaysPing, botSaysPing ? "ping" : "pong");
+    startPingPongGame(msg.channel, userId, 0, botMessage);
     return;
   }
 
-  // Enforce: if bot said ping, you must reply pong; if bot said pong, you must reply ping
+  // The correct response is always the *opposite* of what the bot last said:
+  // If lastBotMessageType was "ping", user must say "pong", etc.
   const expectedResponse = game.lastBotMessageType === "ping" ? "pong" : "ping";
   if (lower !== expectedResponse) {
-    msg.channel.send(`❌ Wrong! I said "${game.lastBotMessageType}". You must reply with "${expectedResponse}". Game over.`);
-    pingPongGames.delete(userId);
+    // Wrong response: ignore, do not end or reset the game.
     return;
   }
 
   // Success! Continue game
   clearTimeout(game.timeout);
 
-  // Update leaderboards (only if exchange > 0 for the user)
   const newExchanges = game.exchanges + 1;
   pingPongExchangesLeaderboard.set(
     userId,
@@ -270,11 +260,11 @@ function handlePingPongResponse(msg, content) {
   }
   saveExchangesLeaderboardToGitHub();
 
-  // Bot sends next random message
+  // Bot sends next message, randomly "ping" or "pong"
   const botSaysPing = Math.random() < 0.5;
-  const botMessage = botSaysPing ? randomPing() : randomPong();
+  const botMessage = botSaysPing ? "ping" : "pong";
   msg.channel.send(botMessage);
-  startPingPongGame(msg.channel, userId, newExchanges, botSaysPing, botSaysPing ? "ping" : "pong");
+  startPingPongGame(msg.channel, userId, newExchanges, botMessage);
 }
 
 // --- Express/discord.js setup ---
