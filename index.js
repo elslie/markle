@@ -12,7 +12,7 @@ const TOKEN = process.env.TOKEN || process.env.DISCORD_TOKEN;
 const CLIENT_ID = process.env.CLIENT_ID;
 
 const ALLOWED_USERS = [
-  // "123456789012345678", // Add your admin user IDs here
+  1333226098128846949
 ];
 
 const pingPongLeaderboard = new Map();
@@ -22,8 +22,10 @@ const mutedUsers = new Map();
 let isSleeping = false;
 
 const bannedWords = new Set([
-  "badword1",
-  "badword2",
+  "aoi",
+  "fag",
+  "retard",
+  "nig"
 ]);
 
 function containsBannedWord(content) {
@@ -132,11 +134,16 @@ async function loadLeaderboardFromGitHub() {
 }
 
 const wordResponses = {
-  "hello": "hi!",
-  "bye": "goodbye!",
+  "good morning": "gm{!}", 
+  "goodnight": "gn{!}", "good night": "gn{!}", 
+  "bye": "bye{!}", "goodbye": "goodbye{!}"
 };
 const multiWordResponses = [
-  [["good", "night"], "sleep well!"],
+  [["fuck you", "markle"], "fuck you too"], [["fuck u", "markle"], "fuck you too"],
+  [["shut up", "markle"], "fuck you"],
+  [["love you", "markle"], "love u too :pink_heart:"], [["love u", "markle"], "love u too :pink_heart:"], 
+  [["thank you", "markle"], "np :pink_heart:"], [["thanks", "markle"], "np :pink_heart:"],
+  [["markle" "seeing this"], "yeah ts is crazy"]
 ];
 
 function processRandomPunctuation(text) {
@@ -162,9 +169,6 @@ function checkWordResponses(content) {
     return processRandomPunctuation('gn{!}');
   }
   if (/\bcya\b/i.test(originalMessage)) {
-    return processRandomPunctuation('cya{!}');
-  }
-  if (/\bgm\b/i.test(originalMessage)) {
     return processRandomPunctuation('cya{!}');
   }
   if (wordResponses[lower]) {
