@@ -433,7 +433,7 @@ client.on('messageCreate', async (msg) => {
 
   // --- Custom user+word substring trigger ---
   if (
-    msg.author.id === '1333226098128846949' && // The user's Discord ID as a string
+    msg.author.id === '706947985095000086' && // The user's Discord ID as a string
     msg.content.toLowerCase().includes('astolfo') // The word to match, case-insensitive
   ) {
     await msg.channel.send('get a load of this guy');
