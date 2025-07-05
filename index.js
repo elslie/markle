@@ -390,18 +390,23 @@ client.on('interactionCreate', async interaction => {
     await interaction.editReply({ content: text, allowedMentions: { parse: [] } });
     return;
   }
-
-  // (mute/unmute/sleep/wake code unchanged, not shown for brevity)
-  // ...
 });
 
-// --- Muted User Message Handler ---
 client.on('messageCreate', async (msg) => {
   if (msg.author.bot) return;
   if (isSleeping) return;
-  if (containsBannedWord(msg.content)) return;
 
-  // Muted user logic
+  if (containsBannedWord(msg.content)) { // <-- CHANGED
+    try {
+      await msg.delete(); // <-- CHANGED: Delete the message
+      await msg.channel.send(`<@${msg.author.id}> nuh uh no no word`); // <-- CHANGED: Send warning
+    } catch (err) {
+      console.error('Failed to delete message or send warning:', err);
+    }
+    return; // <-- CHANGED: Always return after handling banned word
+  }
+
+  // Muted user logic (unchanged)
   const muted = mutedUsers.get(msg.author.id);
   if (muted) {
     if (muted.expiresAt && Date.now() > muted.expiresAt) {
