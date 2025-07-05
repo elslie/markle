@@ -143,7 +143,7 @@ const multiWordResponses = [
   [["shut up", "markle"], "fuck you"],
   [["love you", "markle"], "love u too :pink_heart:"], [["love u", "markle"], "love u too :pink_heart:"], 
   [["thank you", "markle"], "np :pink_heart:"], [["thanks", "markle"], "np :pink_heart:"],
-  [["markle" "seeing this"], "yeah ts is crazy"]
+  [["markle", "seeing this"], "yeah ts is crazy"]
 ];
 
 function processRandomPunctuation(text) {
