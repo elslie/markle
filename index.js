@@ -228,47 +228,60 @@ function handlePingPongResponse(msg, content) {
   if (!msg || !msg.channel || !msg.author) return false;
   const userId = msg.author.id;
   const lower = content.trim().toLowerCase();
-  const game = pingPongGames.get(userId);
+  const username = msg.author.username;
 
-  // Only respond to "ping" or "pong"
-  if (lower !== "ping" && lower !== "pong") return;
-
-  // If no game, start a new one with a random bot message ("ping" or "pong")
-  if (!game) {
-    const botSaysPing = Math.random() < 0.5;
-    const botMessage = botSaysPing ? "ping" : "pong";
-    msg.channel.send(botMessage);
-    startPingPongGame(msg.channel, userId, 0, botMessage);
+  // Only allow "ping" or "pong"
+  if (lower !== "ping" && lower !== "pong") {
+    console.log(`[IGNORED] ${username} said '${lower}', which isn't a valid move.`);
     return;
   }
 
-  // The correct response is always the *opposite* of what the bot last said:
-  // If lastBotMessageType was "ping", user must say "pong", etc.
-  const expectedResponse = game.lastBotMessageType === "ping" ? "pong" : "ping";
-  if (lower !== expectedResponse) {
-    // Wrong response: ignore, do not end or reset the game.
+  const currentGame = pingPongGames.get(userId);
+
+  // If no game is active, start a new one
+  if (!currentGame) {
+    const botStartsWith = Math.random() < 0.5 ? "ping" : "pong";
+    console.log(`[NEW GAME] ${username} starts a new game. Bot opens with '${botStartsWith}'.`);
+    msg.channel.send(botStartsWith);
+    startPingPongGame(msg.channel, userId, 0, botStartsWith);
     return;
   }
 
-  // Success! Continue game
-  clearTimeout(game.timeout);
+  const expected = currentGame.lastBotMessageType === "ping" ? "pong" : "ping";
 
-  const newExchanges = game.exchanges + 1;
-  pingPongExchangesLeaderboard.set(
-    userId,
-    (pingPongExchangesLeaderboard.get(userId) || 0) + 1
-  );
-  if (!pingPongLeaderboard.has(userId) || pingPongLeaderboard.get(userId) < newExchanges) {
-    pingPongLeaderboard.set(userId, newExchanges);
+  // Wrong move: end the game and notify
+  if (lower !== expected) {
+    console.log(`[FAIL] ${username} said '${lower}', expected '${expected}'. Game over.`);
+    msg.channel.send(`<@${userId}> wrong move—expected **${expected}**!`);
+    clearTimeout(currentGame.timeout);
+    pingPongGames.delete(userId);
+    return;
+  }
+
+  // Success! Continue the game
+  clearTimeout(currentGame.timeout);
+  const updatedStreak = currentGame.exchanges + 1;
+
+  // Update lifetime total
+  const previousTotal = pingPongExchangesLeaderboard.get(userId) || 0;
+  pingPongExchangesLeaderboard.set(userId, previousTotal + 1);
+  console.log(`[SUCCESS] ${username} responded correctly. Total exchanges: ${previousTotal + 1}, Streak: ${updatedStreak}`);
+
+  // Update highest streak if needed
+  const bestStreak = pingPongLeaderboard.get(userId) || 0;
+  if (updatedStreak > bestStreak) {
+    pingPongLeaderboard.set(userId, updatedStreak);
     saveLeaderboardToGitHub();
+    console.log(`[RECORD] ${username} set a new highest streak: ${updatedStreak}`);
   }
+
   saveExchangesLeaderboardToGitHub();
 
-  // Bot sends next message, randomly "ping" or "pong"
-  const botSaysPing = Math.random() < 0.5;
-  const botMessage = botSaysPing ? "ping" : "pong";
-  msg.channel.send(botMessage);
-  startPingPongGame(msg.channel, userId, newExchanges, botMessage);
+  // Bot replies
+  const botNext = Math.random() < 0.5 ? "ping" : "pong";
+  console.log(`[BOT REPLY] Bot says '${botNext}'. Waiting for ${username} to continue.`);
+  msg.channel.send(botNext);
+  startPingPongGame(msg.channel, userId, updatedStreak, botNext);
 }
 
 // --- Express/discord.js setup ---
