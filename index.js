@@ -444,24 +444,33 @@ client.on('messageCreate', async (msg) => {
     return;
   }
 
-  // --- Custom user+word substring trigger ---
-  // Define your list of users
+  // --- Set of users allowed to trigger the response ---
   const CUSTOM_TRIGGER_USERS = new Set([
-    '706947985095000086', 
-    '1333226098128846949'
+    '706947985095000086', // llamu.
+    '123456789012345678', // add more IDs here as needed
   ]);
   
-  // Inside your message handler
+  // --- Text normalization helper ---
+  function normalizeText(text) {
+    return text.normalize("NFKD")
+               .replace(/[\u0300-\u036f]/g, "") // strip accents
+               .replace(/[\u043E]/g, "o")       // Cyrillic small o → Latin o
+               .replace(/[\u03BF]/g, "o")       // Greek omicron → Latin o
+               .replace(/[\u041E]/g, "O")       // Cyrillic capital O → Latin O
+               .toLowerCase();
+  }
+  
+  // --- Inside your message handler ---
+  const normalized = normalizeText(msg.content);
+  
   if (
     CUSTOM_TRIGGER_USERS.has(msg.author.id) &&
-    msg.content.toLowerCase().includes('astolfo')
+    normalized.includes('astolfo')
   ) {
     console.log(`[CUSTOM TRIGGER] ${msg.author.username} mentioned "astolfo"`);
     await msg.channel.send('get a load of this guy');
     return;
   }
-
-
 
   // Normal bot features
   const response = checkWordResponses(msg.content);
