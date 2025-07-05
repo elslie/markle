@@ -445,31 +445,41 @@ client.on('messageCreate', async (msg) => {
   }
 
   // --- Set of users allowed to trigger the response ---
+   // --- User ID set for custom triggers ---
   const CUSTOM_TRIGGER_USERS = new Set([
     '706947985095000086', // llamu.
-    '123456789012345678', // add more IDs here as needed
+    '1333226098128846949'
   ]);
   
-  // --- Text normalization helper ---
+  // --- Map of keyword → custom response ---
+  const TRIGGER_RESPONSES = {
+    astolfo: "get a load of this guy",
+    1391125765839392829: "get a load of this guy"
+    // add more keywords and responses here
+  };
+  
+  // --- Normalization helper to handle weird characters ---
   function normalizeText(text) {
     return text.normalize("NFKD")
-               .replace(/[\u0300-\u036f]/g, "") // strip accents
+               .replace(/[\u0300-\u036f]/g, "") // strip diacritics
                .replace(/[\u043E]/g, "o")       // Cyrillic small o → Latin o
                .replace(/[\u03BF]/g, "o")       // Greek omicron → Latin o
                .replace(/[\u041E]/g, "O")       // Cyrillic capital O → Latin O
                .toLowerCase();
   }
   
-  // --- Inside your message handler ---
+  // --- Inside your messageCreate handler ---
   const normalized = normalizeText(msg.content);
   
-  if (
-    CUSTOM_TRIGGER_USERS.has(msg.author.id) &&
-    normalized.includes('astolfo')
-  ) {
-    console.log(`[CUSTOM TRIGGER] ${msg.author.username} mentioned "astolfo"`);
-    await msg.channel.send('get a load of this guy');
-    return;
+  for (const keyword in TRIGGER_RESPONSES) {
+    if (
+      CUSTOM_TRIGGER_USERS.has(msg.author.id) &&
+      normalized.includes(keyword)
+    ) {
+      console.log(`[CUSTOM TRIGGER] ${msg.author.username} triggered "${keyword}"`);
+      await msg.channel.send(TRIGGER_RESPONSES[keyword]);
+      return;
+    }
   }
 
   // Normal bot features
