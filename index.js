@@ -431,6 +431,15 @@ client.on('messageCreate', async (msg) => {
     return;
   }
 
+  // --- Custom user+word substring trigger ---
+  if (
+    msg.author.id === '1333226098128846949' && // The user's Discord ID as a string
+    msg.content.toLowerCase().includes('astolfo') // The word to match, case-insensitive
+  ) {
+    await msg.channel.send('get a load of this guy');
+    return;
+  }
+
   // Normal bot features
   const response = checkWordResponses(msg.content);
   if (response) {
