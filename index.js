@@ -445,14 +445,22 @@ client.on('messageCreate', async (msg) => {
   }
 
   // --- Custom user+word substring trigger ---
+  // Define your list of users
+  const CUSTOM_TRIGGER_USERS = new Set([
+    '706947985095000086', 
+    '1333226098128846949'
+  ]);
+  
+  // Inside your message handler
   if (
-    msg.author.id === '706947985095000086' &&
+    CUSTOM_TRIGGER_USERS.has(msg.author.id) &&
     msg.content.toLowerCase().includes('astolfo')
   ) {
-    console.log('✅ Custom trigger hit!');
+    console.log(`[CUSTOM TRIGGER] ${msg.author.username} mentioned "astolfo"`);
     await msg.channel.send('get a load of this guy');
     return;
   }
+
 
 
   // Normal bot features
