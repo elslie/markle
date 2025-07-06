@@ -136,7 +136,9 @@ async function loadLeaderboardFromGitHub() {
 const wordResponses = {
   "good morning": "gm{!}", 
   "goodnight": "gn{!}", "good night": "gn{!}", 
-  "bye": "bye{!}", "goodbye": "goodbye{!}"
+  "bye": "bye{!}", "goodbye": "goodbye{!}",
+  "ho": "ho",
+  "lelll😛": "lelll😛"
 };
 const multiWordResponses = [
   [["fuck you", "markle"], "fuck you too"], [["fuck u", "markle"], "fuck you too"],
