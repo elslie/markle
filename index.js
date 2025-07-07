@@ -22,7 +22,7 @@ const mutedUsers = new Map();
 let isSleeping = false;
 
 const bannedWords = new Set([
-  "aoi",
+  "yaoi",
   "fag",
   "retard",
   "nig"
