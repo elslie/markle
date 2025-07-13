@@ -468,6 +468,8 @@ client.on('messageCreate', async (msg) => {
     return text.normalize("NFKD")
                .replace(/[\u0300-\u036f]/g, "") // strip diacritics
                .replace(/[\u043E]/g, "o")       // Cyrillic small o → Latin o
+               .replace(/[\u0430]/g, "a")       // Cyrillic small a → Latin a
+               .replace(/[\u0410]/g, "A")       // Cyrillic capital A → Latin A
                .replace(/[\u03BF]/g, "o")       // Greek omicron → Latin o
                .replace(/[\u041E]/g, "O")       // Cyrillic capital O → Latin O
                .toLowerCase();
