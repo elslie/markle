@@ -197,11 +197,16 @@ function checkWordResponses(content) {
     [/^gn$/i, "gn{!}"],
     [/^cya$/i, "cya{!}"],
   ];
-  for (const [regex, response] of regexTriggers) {
-    if (regex.test(normalized)) {
-      return processRandomPunctuation(response);
-    }
+for (const [regex, response] of regexTriggers) {
+  if (regex.test(normalized)) {
+    console.log("✅ Matched regex:", regex);
+    console.log("📥 Raw response template:", response);
+    const processed = processRandomPunctuation(response);
+    console.log("🎯 Final processed response:", processed);
+    return processed;
   }
+}
+
 
   // --- Exact single-word triggers ---
   if (/^markle$/i.test(originalMessage)) {
