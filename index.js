@@ -142,7 +142,6 @@ const wordResponses = {
   "marco": "polo",
   "hbu": "nothing much", "wbu": "nothing much",
   "bot": "is that a markle reference{?}",
-  "raaah": "raaah{!}"
 };
 const multiWordResponses = [
   [["fuck you", "markle"], "fuck you too"], [["fuck u", "markle"], "fuck you too"],
@@ -154,39 +153,57 @@ const multiWordResponses = [
 ];
 
 function processRandomPunctuation(text) {
-  text = text.replace(/\{!\}/g, () => {
-    const count = Math.floor(Math.random() * 13) + 3;
-    return '!'.repeat(count);
-  });
-  text = text.replace(/\{\?\}/g, () => {
-    const count = Math.floor(Math.random() * 13) + 3;
-    return '?'.repeat(count);
-  });
+  const dynamicPunctuation = {
+    '{!}': '!',
+    '{?}': '?',
+    '{a}': 'a'
+  };
+
+  for (const [token, char] of Object.entries(dynamicPunctuation)) {
+    text = text.replace(new RegExp(token, 'g'), () => {
+      const count = Math.floor(Math.random() * 13) + 3;
+      return char.repeat(count);
+    });
+  }
+
   return text;
 }
 
 function checkWordResponses(content) {
-  const lower = content.toLowerCase();
+  const lower = content.toLowerCase().trim();
   const originalMessage = content.trim();
+  const normalized = normalizeText(originalMessage);
 
+  // --- Regex-based triggers ---
+  const regexTriggers = [
+    [/^ra+h$/i, "r{a}h{!}"],
+    [/^cwaizi+$/i, "cwaizi{!}"],
+    [/^gn$/i, "gn{!}"],
+    [/^cya$/i, "cya{!}"],
+  ];
+  for (const [regex, response] of regexTriggers) {
+    if (regex.test(normalized)) {
+      return processRandomPunctuation(response);
+    }
+  }
+
+  // --- Exact single-word triggers ---
   if (/^markle$/i.test(originalMessage)) {
     return 'wsg';
-  }
-  if (/\bgn\b/i.test(originalMessage)) {
-    return processRandomPunctuation('gn{!}');
-  }
-  if (/\bcya\b/i.test(originalMessage)) {
-    return processRandomPunctuation('cya{!}');
   }
   if (wordResponses[lower]) {
     return processRandomPunctuation(wordResponses[lower]);
   }
+
+  // --- Multi-word triggers ---
   for (const [wordPair, response] of multiWordResponses) {
     const [word1, word2] = wordPair;
     if (lower.includes(word1.toLowerCase()) && lower.includes(word2.toLowerCase())) {
       return processRandomPunctuation(response);
     }
   }
+
+  // --- Partial matches from wordResponses ---
   const words = lower.split(/\s+/);
   const matchedResponses = [];
   for (const [trigger, response] of Object.entries(wordResponses)) {
@@ -200,6 +217,7 @@ function checkWordResponses(content) {
   if (matchedResponses.length === 1) {
     return matchedResponses[0];
   }
+
   return null;
 }
 
