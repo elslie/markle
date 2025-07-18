@@ -12,7 +12,7 @@ const TOKEN = process.env.TOKEN || process.env.DISCORD_TOKEN;
 const CLIENT_ID = process.env.CLIENT_ID;
 
 const ALLOWED_USERS = [
-  1333226098128846949
+  '1333226098128846949'
 ];
 
 const pingPongLeaderboard = new Map();
@@ -144,6 +144,7 @@ const wordResponses = {
   "bot": "is that a markle reference{?}",
   "awesomesauce": "awesomesauce{!}", "awesome sauce": "awesomesauce{!}",
   "everypony": "everypony{!}",
+  "shup up": "shup up"
 };
 const multiWordResponses = [
   [["fuck you", "markle"], "fuck you too"], [["fuck u", "markle"], "fuck you too"],
@@ -389,7 +390,7 @@ async function registerSlashCommands() {
 // --- Slash Command Handler ---
 client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;
-  const userId = interaction.user.id;
+  const userId = interaction.user.id.toString();
 
   // Admin-only commands
   if (
@@ -493,7 +494,6 @@ client.on('messageCreate', async (msg) => {
   // --- Map of keyword → custom response ---
   const TRIGGER_RESPONSES = {
     astolfo: "get a load of this guy",
-    1391125765839392829: "get a load of this guy"
     // add more keywords and responses here
   };
   
