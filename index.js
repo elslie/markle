@@ -163,15 +163,18 @@ function processRandomPunctuation(text) {
     '{i}': 'i'
   };
 
-  for (const [token, char] of Object.entries(dynamicPunctuation)) {
-    text = text.replace(new RegExp(token.replace(/[{}]/g, '\\$&'), 'g'), () => {
+  // Use a loop that avoids regex entirely
+  for (const token in dynamicPunctuation) {
+    const char = dynamicPunctuation[token];
+    while (text.includes(token)) {
       const count = Math.floor(Math.random() * 13) + 3;
-      return char.repeat(count);
-    });
+      text = text.replace(token, char.repeat(count));
+    }
   }
 
   return text;
 }
+
 
   // --- Normalization helper to handle weird characters ---
   function normalizeText(text) {
