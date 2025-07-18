@@ -142,6 +142,8 @@ const wordResponses = {
   "marco": "polo",
   "hbu": "nothing much", "wbu": "nothing much",
   "bot": "is that a markle reference{?}",
+  "awesomesauce": "awesomesauce{!}", "awesome sauce": "awesomesauce{!}",
+  "everypony": "everypony{!}",
 };
 const multiWordResponses = [
   [["fuck you", "markle"], "fuck you too"], [["fuck u", "markle"], "fuck you too"],
@@ -167,6 +169,18 @@ function processRandomPunctuation(text) {
   }
 
   return text;
+}
+
+  // --- Normalization helper to handle weird characters ---
+  function normalizeText(text) {
+  return text.normalize("NFKD")
+             .replace(/[\u0300-\u036f]/g, "") // strip diacritics
+             .replace(/[\u043E]/g, "o")       // Cyrillic small o → Latin o
+             .replace(/[\u0430]/g, "a")       // Cyrillic small a → Latin a
+             .replace(/[\u0410]/g, "A")       // Cyrillic capital A → Latin A
+             .replace(/[\u03BF]/g, "o")       // Greek omicron → Latin o
+             .replace(/[\u041E]/g, "O")       // Cyrillic capital O → Latin O
+             .toLowerCase();
 }
 
 function checkWordResponses(content) {
@@ -482,18 +496,6 @@ client.on('messageCreate', async (msg) => {
     1391125765839392829: "get a load of this guy"
     // add more keywords and responses here
   };
-  
-  // --- Normalization helper to handle weird characters ---
-  function normalizeText(text) {
-    return text.normalize("NFKD")
-               .replace(/[\u0300-\u036f]/g, "") // strip diacritics
-               .replace(/[\u043E]/g, "o")       // Cyrillic small o → Latin o
-               .replace(/[\u0430]/g, "a")       // Cyrillic small a → Latin a
-               .replace(/[\u0410]/g, "A")       // Cyrillic capital A → Latin A
-               .replace(/[\u03BF]/g, "o")       // Greek omicron → Latin o
-               .replace(/[\u041E]/g, "O")       // Cyrillic capital O → Latin O
-               .toLowerCase();
-  }
   
   // --- Inside your messageCreate handler ---
   const normalized = normalizeText(msg.content);
