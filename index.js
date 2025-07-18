@@ -159,11 +159,12 @@ function processRandomPunctuation(text) {
   const dynamicPunctuation = {
     '{!}': '!',
     '{?}': '?',
-    '{a}': 'a'
+    '{a}': 'a',
+    '{i}': 'i'
   };
 
   for (const [token, char] of Object.entries(dynamicPunctuation)) {
-    text = text.replace(new RegExp(token, 'g'), () => {
+    text = text.replace(new RegExp(token.replace(/[{}]/g, '\\$&'), 'g'), () => {
       const count = Math.floor(Math.random() * 13) + 3;
       return char.repeat(count);
     });
