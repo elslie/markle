@@ -144,7 +144,9 @@ const wordResponses = {
   "bot": "is that a markle reference{?}",
   "awesomesauce": "awesomesauce{!}", "awesome sauce": "awesomesauce{!}",
   "everypony": "everypony{!}",
-  "shup up": "shup up"
+  "shup up": "shup up",
+  "...": "...",
+  "fuck": "*flip"
 };
 const multiWordResponses = [
   [["fuck you", "markle"], "fuck you too"], [["fuck u", "markle"], "fuck you too"],
