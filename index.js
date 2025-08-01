@@ -43,6 +43,31 @@ const DEFAULT_BRANCH = "main";
 const INITIAL_PING_PONG_TIME = 7000;
 const MIN_PING_PONG_TIME = 600;
 
+// --- Utility: Robust Discord Interaction Reply ---
+async function safeReply(interaction, data) {
+  let tried = 0;
+  while (tried < 3) {
+    tried++;
+    try {
+      if (interaction.replied || interaction.deferred) {
+        await interaction.editReply(data);
+      } else {
+        await interaction.reply(data);
+      }
+      return true;
+    } catch (err) {
+      if (tried < 3) continue;
+      console.error("[Discord] Failed to reply:", err);
+    }
+  }
+  return false;
+}
+
+// --- Utility: Sleep for ms ---
+function sleep(ms) {
+  return new Promise(res => setTimeout(res, ms));
+}
+
 async function saveToGitHubFile({ path, message, content }) {
   let attempts = 0;
   let sha;
@@ -157,7 +182,7 @@ const multiWordResponses = [
   [["markle", "to you"], "mb gang"],
 ];
 
-function processRandomPunctuation(text) {
+function processRandomPunctuation(text, forceLength) {
   const dynamicPunctuation = {
     '{!}': '!',
     '{?}': '?',
@@ -165,21 +190,22 @@ function processRandomPunctuation(text) {
     '{i}': 'i'
   };
 
-  // Use a loop that avoids regex entirely
   for (const token in dynamicPunctuation) {
     const char = dynamicPunctuation[token];
-    while (text.includes(token)) {
-      const count = Math.floor(Math.random() * 13) + 3;
-      text = text.replace(token, char.repeat(count));
+    if (forceLength && text.includes(token)) {
+      text = text.replace(token, char.repeat(forceLength));
+    } else {
+      while (text.includes(token)) {
+        const count = Math.floor(Math.random() * 13) + 3;
+        text = text.replace(token, char.repeat(count));
+      }
     }
   }
-
   return text;
 }
 
-
-  // --- Normalization helper to handle weird characters ---
-  function normalizeText(text) {
+// --- Normalization helper to handle weird characters ---
+function normalizeText(text) {
   return text.normalize("NFKD")
              .replace(/[\u0300-\u036f]/g, "") // strip diacritics
              .replace(/[\u043E]/g, "o")       // Cyrillic small o → Latin o
@@ -190,28 +216,42 @@ function processRandomPunctuation(text) {
              .toLowerCase();
 }
 
+// --- Palindrome check, for aibohphobia ---
+function isPalindrome(word) {
+  if (!word || word.length < 3) return false;
+  const normalized = word.toLowerCase();
+  if (/^([a-z])\1*$/.test(normalized)) return false; // skip if all same letter
+  return normalized === normalized.split('').reverse().join('');
+}
+
 function checkWordResponses(content) {
   const lower = content.toLowerCase().trim();
   const originalMessage = content.trim();
   const normalized = normalizeText(originalMessage);
 
   // --- Regex-based triggers ---
+  // "rahhh" dynamic: length scales output
+  const rahRegex = /^ra+h+$/i;
+  if (rahRegex.test(normalized)) {
+    const rahLen = normalized.length;
+    // Always lowercase, scale a/h/!
+    const aCount = Math.max(1, Math.floor(rahLen / 5));
+    const hCount = Math.max(3, Math.floor(rahLen / 2));
+    const exclCount = Math.max(3, Math.floor(rahLen / 3));
+    const out = "r" + "a".repeat(aCount) + "h".repeat(hCount) + "!".repeat(exclCount);
+    return out;
+  }
+
   const regexTriggers = [
-    [/^ra+h$/i, "r{a}h{!}"],
     [/^cwaizi+$/i, "cwaizi{!}"],
     [/^gn$/i, "gn{!}"],
     [/^cya$/i, "cya{!}"],
   ];
-for (const [regex, response] of regexTriggers) {
-  if (regex.test(normalized)) {
-    console.log("✅ Matched regex:", regex);
-    console.log("📥 Raw response template:", response);
-    const processed = processRandomPunctuation(response);
-    console.log("🎯 Final processed response:", processed);
-    return processed;
+  for (const [regex, response] of regexTriggers) {
+    if (regex.test(normalized)) {
+      return processRandomPunctuation(response);
+    }
   }
-}
-
 
   // --- Exact single-word triggers ---
   if (/^markle$/i.test(originalMessage)) {
@@ -263,7 +303,7 @@ function startPingPongGame(channel, userId, exchanges = 0, lastBotMessageType = 
 
   const timeout = setTimeout(async () => {
     const word = exchanges === 1 ? "exchange" : "exchanges";
-    channel.send(`<@${userId}> ggwp u had ${exchanges} ${word}`);
+    channel.send(`<@${userId}> ggwp u had ${exchanges} ${word}`).catch(console.error);
     pingPongGames.delete(userId);
   }, timeLimit);
 
@@ -283,7 +323,6 @@ function handlePingPongResponse(msg, content) {
 
   // Only allow "ping" or "pong"
   if (lower !== "ping" && lower !== "pong") {
-    console.log(`[IGNORED] ${username} said '${lower}', which isn't a valid move.`);
     return;
   }
 
@@ -292,8 +331,7 @@ function handlePingPongResponse(msg, content) {
   // If no game is active, start a new one
   if (!currentGame) {
     const botStartsWith = Math.random() < 0.5 ? "ping" : "pong";
-    console.log(`[NEW GAME] ${username} starts a new game. Bot opens with '${botStartsWith}'.`);
-    msg.channel.send(botStartsWith);
+    msg.channel.send(botStartsWith).catch(console.error);
     startPingPongGame(msg.channel, userId, 0, botStartsWith);
     return;
   }
@@ -302,8 +340,7 @@ function handlePingPongResponse(msg, content) {
 
   // Wrong move: end the game and notify
   if (lower !== expected) {
-    console.log(`[FAIL] ${username} said '${lower}', expected '${expected}'. Game over.`);
-    msg.channel.send(`<@${userId}> wrong move—expected **${expected}**!`);
+    msg.channel.send(`<@${userId}> wrong move—expected **${expected}**!`).catch(console.error);
     clearTimeout(currentGame.timeout);
     pingPongGames.delete(userId);
     return;
@@ -316,22 +353,19 @@ function handlePingPongResponse(msg, content) {
   // Update lifetime total
   const previousTotal = pingPongExchangesLeaderboard.get(userId) || 0;
   pingPongExchangesLeaderboard.set(userId, previousTotal + 1);
-  console.log(`[SUCCESS] ${username} responded correctly. Total exchanges: ${previousTotal + 1}, Streak: ${updatedStreak}`);
 
   // Update highest streak if needed
   const bestStreak = pingPongLeaderboard.get(userId) || 0;
   if (updatedStreak > bestStreak) {
     pingPongLeaderboard.set(userId, updatedStreak);
-    saveLeaderboardToGitHub();
-    console.log(`[RECORD] ${username} set a new highest streak: ${updatedStreak}`);
+    saveLeaderboardToGitHub().catch(console.error);
   }
 
-  saveExchangesLeaderboardToGitHub();
+  saveExchangesLeaderboardToGitHub().catch(console.error);
 
   // Bot replies
   const botNext = Math.random() < 0.5 ? "ping" : "pong";
-  console.log(`[BOT REPLY] Bot says '${botNext}'. Waiting for ${username} to continue.`);
-  msg.channel.send(botNext);
+  msg.channel.send(botNext).catch(console.error);
   startPingPongGame(msg.channel, userId, updatedStreak, botNext);
 }
 
@@ -408,10 +442,67 @@ client.on('interactionCreate', async interaction => {
     ['mute', 'unmute', 'sleep', 'wake'].includes(interaction.commandName)
     && !ALLOWED_USERS.includes(userId)
   ) {
-    await interaction.reply({
+    await safeReply(interaction, {
       content: "❌ You are not allowed to use this command.",
       ephemeral: true
     });
+    return;
+  }
+
+  // --- Mute Command ---
+  if (interaction.commandName === 'mute') {
+    try {
+      const target = interaction.options.getUser('target');
+      const minutes = interaction.options.getInteger('minutes') || 3;
+      if (!target) {
+        await safeReply(interaction, "No target user.");
+        return;
+      }
+      const challenge = Math.floor(Math.random() * 10) + 3;
+      const expiresAt = Date.now() + minutes * 60 * 1000;
+      mutedUsers.set(target.id, { challenge, expiresAt, free: false });
+      await safeReply(interaction, `Muted <@${target.id}> for ${minutes} minutes. They must send \`${"!".repeat(challenge)}\` to talk once.`);
+    } catch (err) {
+      console.error("Mute failed:", err);
+      await safeReply(interaction, "The bot failed to respond (mute error). Try again or check bot permissions.");
+    }
+    return;
+  }
+
+  // --- Unmute Command ---
+  if (interaction.commandName === 'unmute') {
+    try {
+      const target = interaction.options.getUser('target');
+      mutedUsers.delete(target.id);
+      await safeReply(interaction, `Unmuted <@${target.id}>.`);
+    } catch (err) {
+      console.error("Unmute failed:", err);
+      await safeReply(interaction, "The bot failed to respond (unmute error). Try again or check bot permissions.");
+    }
+    return;
+  }
+
+  // --- Sleep Command ---
+  if (interaction.commandName === 'sleep') {
+    try {
+      isSleeping = true;
+      await safeReply(interaction, "Markle bot is now sleeping.");
+    } catch (err) {
+      console.error("Sleep failed:", err);
+      await safeReply(interaction, "The bot failed to respond (sleep error). Try again or check bot permissions.");
+    }
+    return;
+  }
+
+  // --- Wake Command ---
+  if (interaction.commandName === 'wake') {
+    try {
+      isSleeping = false;
+      await safeReply(interaction, "Markle bot is awake!");
+    } catch (err) {
+      console.error("Wake failed:", err);
+      await safeReply(interaction, "The bot failed to respond (wake error). Try again or check bot permissions.");
+    }
     return;
   }
 
@@ -456,21 +547,45 @@ client.on('interactionCreate', async interaction => {
   }
 });
 
+// --- Custom User Triggers ---
+const CUSTOM_TRIGGER_USERS = new Set([
+  '706947985095000086', // llamu.
+  '1333226098128846949'
+]);
+const TRIGGER_RESPONSES = {
+  astolfo: "get a load of this guy",
+};
+
+// --- Markle you seeing this triggers (separate mapping) ---
+const SEEING_THIS_USERS = new Set([
+  // Add user IDs here who should trigger the "markle you seeing this" response
+  '706947985095000086' // Example user
+]);
+const SEEING_THIS_TRIGGER = {
+  "markle you seeing this",
+  "markle u seeing this",
+  "markle you seeing ts",
+  "markle u seeing ts"
+};
+const SEEING_THIS_RESPONSE = "yh ts is cwaizi";
+
+// --- Message Handler ---
 client.on('messageCreate', async (msg) => {
   if (msg.author.bot) return;
   if (isSleeping) return;
 
-  if (containsBannedWord(msg.content)) { // <-- CHANGED
+  // --- Banned words ---
+  if (containsBannedWord(msg.content)) {
     try {
-      await msg.delete(); // <-- CHANGED: Delete the message
-      await msg.channel.send(`<@${msg.author.id}> nuh uh no no word`); // <-- CHANGED: Send warning
+      await msg.delete();
+      await msg.channel.send(`<@${msg.author.id}> nuh uh no no word`);
     } catch (err) {
       console.error('Failed to delete message or send warning:', err);
     }
-    return; // <-- CHANGED: Always return after handling banned word
+    return;
   }
 
-  // Muted user logic (unchanged)
+  // --- Muted user logic ---
   const muted = mutedUsers.get(msg.author.id);
   if (muted) {
     if (muted.expiresAt && Date.now() > muted.expiresAt) {
@@ -495,31 +610,38 @@ client.on('messageCreate', async (msg) => {
     return;
   }
 
-  // --- Set of users allowed to trigger the response ---
-   // --- User ID set for custom triggers ---
-  const CUSTOM_TRIGGER_USERS = new Set([
-    '706947985095000086', // llamu.
-    '1333226098128846949'
-  ]);
-  
-  // --- Map of keyword → custom response ---
-  const TRIGGER_RESPONSES = {
-    astolfo: "get a load of this guy",
-    // add more keywords and responses here
-  };
-  
-  // --- Inside your messageCreate handler ---
+  // --- Aibohphobia: Palindrome panic ---
+  const words = msg.content.split(/\s+/);
+  for (const word of words) {
+    if (isPalindrome(word)) {
+      // Randomize h and ! count
+      const hCount = Math.floor(Math.random() * 8) + 4;
+      const exclCount = Math.floor(Math.random() * 6) + 3;
+      await msg.channel.send("ah" + "h".repeat(hCount) + "!".repeat(exclCount));
+      break;
+    }
+  }
+
+  // --- Custom triggers ---
+  // Astolfo for allowed users
   const normalized = normalizeText(msg.content);
-  
   for (const keyword in TRIGGER_RESPONSES) {
     if (
       CUSTOM_TRIGGER_USERS.has(msg.author.id) &&
       normalized.includes(keyword)
     ) {
-      console.log(`[CUSTOM TRIGGER] ${msg.author.username} triggered "${keyword}"`);
       await msg.channel.send(TRIGGER_RESPONSES[keyword]);
       return;
     }
+  }
+
+  // "markle you seeing this" for specific users, do not merge!
+  if (
+    SEEING_THIS_USERS.has(msg.author.id) &&
+    normalized.includes(SEEING_THIS_TRIGGER)
+  ) {
+    await msg.channel.send(SEEING_THIS_RESPONSE);
+    return;
   }
 
   // Normal bot features
