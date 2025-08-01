@@ -159,7 +159,7 @@ async function loadLeaderboardFromGitHub() {
 }
 
 const wordResponses = {
-  "good morning": "gm{!}", 
+  "good morning": "gm{!}", "gm": "gm{!}"
   "goodnight": "gn{!}", "good night": "gn{!}", 
   "bye": "bye{!}", "goodbye": "goodbye{!}",
   "ho": "ho",
@@ -171,7 +171,8 @@ const wordResponses = {
   "everypony": "everypony{!}",
   "shup up": "shup up",
   "...": "...",
-  "fuck": "*flip"
+  "fuck": "*flip",
+  "clanker": "what didd u just say{?}" 
 };
 const multiWordResponses = [
   [["fuck you", "markle"], "fuck you too"], [["fuck u", "markle"], "fuck you too"],
@@ -549,8 +550,7 @@ client.on('interactionCreate', async interaction => {
 
 // --- Custom User Triggers ---
 const CUSTOM_TRIGGER_USERS = new Set([
-  '706947985095000086', // llamu.
-  '1333226098128846949'
+  '706947985095000086',
 ]);
 const TRIGGER_RESPONSES = {
   astolfo: "get a load of this guy",
@@ -559,14 +559,14 @@ const TRIGGER_RESPONSES = {
 // --- Markle you seeing this triggers (separate mapping) ---
 const SEEING_THIS_USERS = new Set([
   // Add user IDs here who should trigger the "markle you seeing this" response
-  '706947985095000086' // Example user
+  '850321119377620992'
 ]);
-const SEEING_THIS_TRIGGER = {
+const SEEING_THIS_TRIGGER = new Set([
   "markle you seeing this",
   "markle u seeing this",
   "markle you seeing ts",
   "markle u seeing ts"
-};
+]);
 const SEEING_THIS_RESPONSE = "yh ts is cwaizi";
 
 // --- Message Handler ---
