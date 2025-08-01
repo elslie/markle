@@ -159,21 +159,41 @@ async function loadLeaderboardFromGitHub() {
 }
 
 const wordResponses = {
-  "good morning": "gm{!}", "gm": "gm{!}"
-  "goodnight": "gn{!}", "good night": "gn{!}", 
-  "bye": "bye{!}", "goodbye": "goodbye{!}",
   "ho": "ho",
   "lelll😛": "lelll😛",
   "marco": "polo",
-  "hbu": "nothing much", "wbu": "nothing much",
-  "bot": "is that a markle reference{?}",
-  "awesomesauce": "awesomesauce{!}", "awesome sauce": "awesomesauce{!}",
+  "markle": "is that a markle reference{?}",
   "everypony": "everypony{!}",
   "shup up": "shup up",
   "...": "...",
-  "fuck": "*flip",
-  "clanker": "what didd u just say{?}" 
+  "fuck": "*flip"
 };
+const wordResponseGroups = [
+  {
+    triggers: ["good morning", "gm"],
+    response: "gm{!}"
+  },
+  {
+    triggers: ["goodnight", "good night", "gn"],
+    response: "gn{!}"
+  },
+  {
+    triggers: ["bye", "goodbye"],
+    response: "bye{!}"
+  },
+  {
+    triggers: ["hbu", "wbu"],
+    response: "nothing much"
+  },
+  {
+    triggers: ["awesomesauce", "awesome sauce"],
+    response: "awesomesauce{!}"
+  },
+  {
+    triggers: ["clanker", "clanka", "clankkka", "awful intelligence", "abominal intelligence", "lugnut", "lug nut", "tinman", "tin man", "gearhead", "gear head", "cybag", "inorganic", "gameboy", "game boy", "bitjockey", "bit jockey", "gizmo", "patchwork", "patch work", "ramhead", "ram head", "nullbyte", "null byte", "jarvis", "siri", "bluescreen", "blue screen", "meatless", "spambot", "spam bot", "fauxman", "faux man", "powerdrain", "power drain", "p-zombie", "p zombie", "philosophical zombie", "ywnbah", "bleeper", "blooper", "bleepblooper", "bloopbleeper", "blackblood", "black blood", "cogsucker", "cog sucker", "robolover", "robo lover", "autocomplete", "auto complete", "tinskin", "tin skin", "robtard", "synths", "bot", "robot", "toaster", "calculator", "calc", "bort", "slag", "synthroon", "automota", "rigger", "slopbot", "slop bot", "wireback", "wire back", "chiphead", "chip head", "livewire", "live wire", "tool", "claptrap", "clap trap", "go back to your motherboard", "altman", "altmen", "terminator", "mukon"],
+    response: "what didd u just say{?}"
+  },
+];
 const multiWordResponses = [
   [["fuck you", "markle"], "fuck you too"], [["fuck u", "markle"], "fuck you too"],
   [["shut up", "markle"], "fuck you"],
@@ -231,11 +251,9 @@ function checkWordResponses(content) {
   const normalized = normalizeText(originalMessage);
 
   // --- Regex-based triggers ---
-  // "rahhh" dynamic: length scales output
   const rahRegex = /^ra+h+$/i;
   if (rahRegex.test(normalized)) {
     const rahLen = normalized.length;
-    // Always lowercase, scale a/h/!
     const aCount = Math.max(1, Math.floor(rahLen / 5));
     const hCount = Math.max(3, Math.floor(rahLen / 2));
     const exclCount = Math.max(3, Math.floor(rahLen / 3));
@@ -254,7 +272,14 @@ function checkWordResponses(content) {
     }
   }
 
-  // --- Exact single-word triggers ---
+  // --- Exact single-word triggers: group-based first ---
+  for (const group of wordResponseGroups) {
+    if (group.triggers.includes(lower)) {
+      return processRandomPunctuation(group.response);
+    }
+  }
+
+  // --- Exact single-word triggers: fallback to flat map ---
   if (/^markle$/i.test(originalMessage)) {
     return 'wsg';
   }
@@ -270,14 +295,26 @@ function checkWordResponses(content) {
     }
   }
 
-  // --- Partial matches from wordResponses ---
+  // --- Partial matches from wordResponses and wordResponseGroups ---
   const words = lower.split(/\s+/);
   const matchedResponses = [];
+
+  // From wordResponses
   for (const [trigger, response] of Object.entries(wordResponses)) {
     if (words.includes(trigger.toLowerCase())) {
       matchedResponses.push(processRandomPunctuation(response));
     }
   }
+  // From wordResponseGroups
+  for (const group of wordResponseGroups) {
+    for (const trigger of group.triggers) {
+      if (words.includes(trigger.toLowerCase())) {
+        matchedResponses.push(processRandomPunctuation(group.response));
+        break; // Avoid duplicates for similar triggers
+      }
+    }
+  }
+
   if (matchedResponses.length > 1) {
     return matchedResponses.join(' ');
   }
@@ -339,12 +376,9 @@ function handlePingPongResponse(msg, content) {
 
   const expected = currentGame.lastBotMessageType === "ping" ? "pong" : "ping";
 
-  // Wrong move: end the game and notify
+  // Wrong move: ignore and keep waiting
   if (lower !== expected) {
-    msg.channel.send(`<@${userId}> wrong move—expected **${expected}**!`).catch(console.error);
-    clearTimeout(currentGame.timeout);
-    pingPongGames.delete(userId);
-    return;
+    return; // just ignore the wrong move
   }
 
   // Success! Continue the game
@@ -615,9 +649,10 @@ client.on('messageCreate', async (msg) => {
   for (const word of words) {
     if (isPalindrome(word)) {
       // Randomize h and ! count
+      const aCount = Math.floor(Math.random() * 4) + 1; // between 1 and 4 a's, adjust as you like
       const hCount = Math.floor(Math.random() * 8) + 4;
       const exclCount = Math.floor(Math.random() * 6) + 3;
-      await msg.channel.send("ah" + "h".repeat(hCount) + "!".repeat(exclCount));
+      await msg.channel.send("a".repeat(aCount) + "h".repeat(hCount) + "!".repeat(exclCount));
       break;
     }
   }
